@@ -53,8 +53,43 @@ const LoginScreen = ({ navigation }) => {
         const isRegistering = await AsyncStorage.getItem('isRegistering');
         if (isRegistering !== 'true') {
           console.log('User authenticated:', user.displayName, user.email, user.phoneNumber);
+          // Navigate to home screen if user is authenticated with Firebase
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Main' }],
+          });
         } else {
           await signOut(auth);
+        }
+      } else {
+        // Check if user has a valid backend token
+        const token = await AsyncStorage.getItem('authToken');
+        if (token) {
+          try {
+            const response = await fetch(`${API_URL}/api/auth/profile`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+            });
+
+            if (response.ok) {
+              // Token is valid, navigate to main app
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Main' }],
+              });
+            } else {
+              // Token is invalid, clear it
+              await AsyncStorage.removeItem('authToken');
+              await AsyncStorage.removeItem('userInfo');
+            }
+          } catch (error) {
+            console.error('Error validating token:', error);
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('userInfo');
+          }
         }
       }
     });
@@ -944,6 +979,59 @@ export default LoginScreen;
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // import React, { useEffect, useRef, useState } from 'react';
 // import {
 //   Animated,
@@ -1060,10 +1148,22 @@ export default LoginScreen;
       
 //       // Check if user needs to complete profile
 //       if (data.user && !data.user.registrationComplete) {
-//         // Navigate to Home and show registration modal
-//         navigation.navigate('Home', { showRegistrationModal: true });
+//         // Navigate to Main and show registration modal
+//         navigation.reset({
+//           index: 0,
+//           routes: [{ 
+//             name: 'Main', 
+//             params: { 
+//               screen: 'Home', 
+//               params: { showRegistrationModal: true } 
+//             } 
+//           }],
+//         });
 //       } else {
-//         navigation.navigate('Home');
+//         navigation.reset({
+//           index: 0,
+//           routes: [{ name: 'Main' }],
+//         });
 //       }
 //     } else {
 //       // Check if this is a "no password" case
@@ -1152,10 +1252,22 @@ export default LoginScreen;
         
 //         // Check if user needs to complete profile
 //         if (data.user && !data.user.registrationComplete) {
-//           // Navigate to Home and show registration modal
-//           navigation.navigate('Home', { showRegistrationModal: true });
+//           // Navigate to Main and show registration modal
+//           navigation.reset({
+//             index: 0,
+//             routes: [{ 
+//               name: 'Main', 
+//               params: { 
+//                 screen: 'Home', 
+//                 params: { showRegistrationModal: true } 
+//               } 
+//             }],
+//           });
 //         } else {
-//           navigation.navigate('Home');
+//           navigation.reset({
+//             index: 0,
+//             routes: [{ name: 'Main' }],
+//           });
 //         }
 //       } else {
 //         console.error('verify-phone failed:', data.message);
@@ -1238,10 +1350,22 @@ export default LoginScreen;
       
 //       // Check if user needs to complete profile
 //       if (data.user && !data.user.registrationComplete) {
-//         // Navigate to Home and show registration modal
-//         navigation.navigate('Home', { showRegistrationModal: true });
+//         // Navigate to Main and show registration modal
+//         navigation.reset({
+//           index: 0,
+//           routes: [{ 
+//             name: 'Main', 
+//             params: { 
+//               screen: 'Home', 
+//               params: { showRegistrationModal: true } 
+//             } 
+//           }],
+//         });
 //       } else {
-//         navigation.navigate('Home');
+//         navigation.reset({
+//           index: 0,
+//           routes: [{ name: 'Main' }],
+//         });
 //       }
 //     } else {
 //       throw new Error(data.message || `Backend returned ${response.status}`);
@@ -1817,3 +1941,37 @@ export default LoginScreen;
 // });
 
 // export default LoginScreen;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

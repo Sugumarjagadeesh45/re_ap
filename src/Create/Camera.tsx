@@ -11,383 +11,212 @@ import {
   Linking,
   AppState,
   Image,
+  Dimensions,
 } from 'react-native';
 import { Camera, useCameraDevices } from 'react-native-vision-camera';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { captureScreenWithTemplate } from '../utils/ScreenshotMerger';
+import { captureScreenWithOverlay } from '../utils/ScreenshotMerger';
 
-// Template images - SMALL & TRANSPARENT
-const TEMPLATE_IMAGES = {
-  dog: require('../assets/dog-icon.png'),      // 150x150 transparent
-  cat: require('../assets/cat-icon.png'),      // 150x150 transparent  
-  cow: require('../assets/cow-icon.png'),      // 150x150 transparent
-  parrot: require('../assets/parrot-icon.png'), // 150x150 transparent
-  bunny: require('../assets/bunny-icon.png'),   // 150x150 transparent
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const TEMPLATE_IMAGES: { [key: string]: any } = {
+  dog: require('../assets/dog-icon.png'),
+  cat: require('../assets/cat-icon.png'),
+  bunny: require('../assets/bunny-icon.png'),
+  cow: require('../assets/cow-icon.png'),
+  parrot: require('../assets/parrot-icon.png'),
 };
 
-export default function CameraScreen({ navigation, route }) {
+export default function CameraScreen({ navigation, route }: any) {
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [hasStoragePermission, setHasStoragePermission] = useState(false);
   const [isFrontCamera, setIsFrontCamera] = useState(true);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [cameraInitialized, setCameraInitialized] = useState(false);
-  const [templatePosition, setTemplatePosition] = useState('top-right'); // Position state
-  const cameraRef = useRef(null);
-  const screenRef = useRef(null);
+  const [templatePosition, setTemplatePosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('top-right');
 
+  const cameraRef = useRef<Camera>(null);
+  const screenRef = useRef<View>(null);
   const devices = useCameraDevices();
-  const device = devices?.find((d) => d.position === (isFrontCamera ? 'front' : 'back')) ?? devices?.[0] ?? null;
+  const device = devices?.find(d => d.position === (isFrontCamera ? 'front' : 'back')) ?? devices?.[0] ?? null;
 
-  // Route params-ல் இருந்து டெம்ப்ளேட்டை பெறுவது
+  // Load selected template from navigation
   useEffect(() => {
-    console.log('📸 Camera Screen - Route params:', route.params);
-    
     if (route.params?.selectedTemplate) {
-      const template = route.params.selectedTemplate;
-      console.log('✅ Template received:', template.name);
-      
-      const templateName = template.name.toLowerCase();
-      const templateImage = TEMPLATE_IMAGES[templateName] || TEMPLATE_IMAGES.dog;
-      
-      setSelectedTemplate({
-        ...template,
-        icon: templateImage
-      });
+      const tmpl = route.params.selectedTemplate;
+      const name = tmpl.name.toLowerCase();
+      const iconSource = TEMPLATE_IMAGES[name] ?? TEMPLATE_IMAGES.dog;
+      const iconUri = Image.resolveAssetSource(iconSource).uri;
+      setSelectedTemplate({ ...tmpl, icon: iconUri });
     }
   }, [route.params]);
 
-  // Template position change செய்யும் function
   const changeTemplatePosition = () => {
-    const positions = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-    const currentIndex = positions.indexOf(templatePosition);
-    const nextIndex = (currentIndex + 1) % positions.length;
-    setTemplatePosition(positions[nextIndex]);
-    console.log('🔄 Template position changed to:', positions[nextIndex]);
+    const order: typeof templatePosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    const idx = order.indexOf(templatePosition);
+    setTemplatePosition(order[(idx + 1) % order.length]);
   };
 
-  // Template position-க்கான styles
-  const getTemplatePositionStyle = () => {
-    switch(templatePosition) {
+  const getOverlayPosition = () => {
+    const size = 120;
+    const margin = 30;
+    const topOffset = 80;
+    const bottomOffset = 140;
+
+    switch (templatePosition) {
       case 'top-left':
-        return styles.templateTopLeft;
+        return { left: margin, top: topOffset, width: size, height: size };
       case 'top-right':
-        return styles.templateTopRight;
+        return { right: margin, top: topOffset, width: size, height: size };
       case 'bottom-left':
-        return styles.templateBottomLeft;
+        return { left: margin, bottom: bottomOffset, width: size, height: size };
       case 'bottom-right':
-        return styles.templateBottomRight;
+        return { right: margin, bottom: bottomOffset, width: size, height: size };
       default:
-        return styles.templateTopRight;
+        return { right: margin, top: topOffset, width: size, height: size };
     }
   };
 
-  // Permission functions (முன்பு போல)
+  // PERMISSIONS
   const checkStoragePermission = async () => {
-    try {
-      let storageGranted = false;
-      
-      if (Platform.OS === 'android') {
-        if (Platform.Version >= 33) {
-          const hasImagesPerm = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-          );
-          storageGranted = hasImagesPerm;
-        } else {
-          const hasStoragePerm = await PermissionsAndroid.check(
-            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE
-          );
-          storageGranted = hasStoragePerm;
-        }
-      } else {
-        storageGranted = true;
-      }
-      
-      setHasStoragePermission(storageGranted);
-      return storageGranted;
-    } catch (error) {
-      console.error('Error checking storage permission:', error);
-      return false;
-    }
+    if (Platform.OS !== 'android') return true;
+    const perm = Platform.Version >= 33
+      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+    const granted = await PermissionsAndroid.check(perm);
+    setHasStoragePermission(granted);
+    return granted;
   };
 
   const requestStoragePermission = async () => {
-    try {
-      let storageGranted = false;
-      
-      if (Platform.OS === 'android') {
-        if (Platform.Version >= 33) {
-          const result = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-            {
-              title: 'Storage Permission',
-              message: 'This app needs access to your storage to save photos.',
-              buttonPositive: 'OK',
-            }
-          );
-          storageGranted = result === PermissionsAndroid.RESULTS.GRANTED;
-        } else {
-          const result = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-            {
-              title: 'Storage Permission',
-              message: 'This app needs access to your storage to save photos.',
-              buttonPositive: 'OK',
-            }
-          );
-          storageGranted = result === PermissionsAndroid.RESULTS.GRANTED;
-        }
-      } else {
-        storageGranted = true;
-      }
-      
-      setHasStoragePermission(storageGranted);
-      return storageGranted;
-    } catch (error) {
-      console.error('Error requesting storage permission:', error);
-      return false;
-    }
+    if (Platform.OS !== 'android') return true;
+    const perm = Platform.Version >= 33
+      ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+    const result = await PermissionsAndroid.request(perm);
+    const granted = result === PermissionsAndroid.RESULTS.GRANTED;
+    setHasStoragePermission(granted);
+    return granted;
   };
 
   const checkCameraPermission = async () => {
-    try {
-      if (Platform.OS === 'android') {
-        const hasCameraPerm = await PermissionsAndroid.check(
-          PermissionsAndroid.PERMISSIONS.CAMERA
-        );
-        
-        if (hasCameraPerm) {
-          setHasCameraPermission(true);
-          setCameraInitialized(true);
-          return true;
-        }
-        
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          {
-            title: 'Camera Permission',
-            message: 'This app needs camera access to take photos and videos.',
-            buttonPositive: 'OK',
-          }
-        );
-        
-        const granted = result === PermissionsAndroid.RESULTS.GRANTED;
-        setHasCameraPermission(granted);
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+      if (granted) {
+        setHasCameraPermission(true);
         setCameraInitialized(true);
-        return granted;
-      } else {
-        const cameraStatus = await Camera.requestCameraPermission();
-        const granted = cameraStatus === 'granted';
-        setHasCameraPermission(granted);
-        setCameraInitialized(true);
-        return granted;
+        return true;
       }
-    } catch (error) {
-      console.error('Error checking camera permission:', error);
+      const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+      const ok = res === PermissionsAndroid.RESULTS.GRANTED;
+      setHasCameraPermission(ok);
       setCameraInitialized(true);
-      return false;
+      return ok;
+    } else {
+      const status = await Camera.requestCameraPermission();
+      const ok = status === 'granted';
+      setHasCameraPermission(ok);
+      setCameraInitialized(true);
+      return ok;
     }
   };
 
   useEffect(() => {
     let mounted = true;
-
-    const initializeCamera = async () => {
+    const init = async () => {
       if (!mounted) return;
-
-      try {
-        const cameraGranted = await checkCameraPermission();
-        if (cameraGranted) {
-          await checkStoragePermission();
-        }
-      } catch (error) {
-        console.error('Error initializing camera:', error);
-      }
+      await checkCameraPermission();
+      await checkStoragePermission();
     };
-
-    const timer = setTimeout(() => {
-      initializeCamera();
-    }, 1000);
-
-    const subscription = AppState.addEventListener('change', async (nextAppState) => {
-      if (nextAppState === 'active' && mounted) {
-        await checkStoragePermission();
-      }
+    const t = setTimeout(init, 800);
+    const sub = AppState.addEventListener('change', async (s) => {
+      if (s === 'active' && mounted) await checkStoragePermission();
     });
-
     return () => {
       mounted = false;
-      clearTimeout(timer);
-      subscription.remove();
+      clearTimeout(t);
+      sub.remove();
     };
   }, []);
 
-  const handleFlipCamera = () => setIsFrontCamera((prev) => !prev);
+  const handleFlipCamera = () => setIsFrontCamera(p => !p);
 
-  // படத்தை கேலரியில் சேமிக்கும் செயல்பாடு
-  const saveImageToGallery = async (imagePath) => {
+  const saveImageToGallery = async (path: string) => {
     try {
-      if (CameraRoll && CameraRoll.save) {
-        await CameraRoll.save(imagePath, { 
-          type: 'photo', 
-          album: 'Reals2Chat' 
-        });
-        console.log('✅ Photo saved with CameraRoll');
-        return true;
-      }
-      
-      const Share = await import('react-native-share');
-      const shareOptions = {
-        url: imagePath.startsWith('file://') ? imagePath : `file://${imagePath}`,
-        type: 'image/jpeg',
-        saveToFiles: true,
-      };
-      
-      await Share.default.open(shareOptions);
-      console.log('✅ Photo saved with react-native-share');
+      await CameraRoll.save(path, { type: 'photo', album: 'Reals2Chat' });
       return true;
-    } catch (error) {
-      console.error('Error saving image:', error);
+    } catch (e) {
+      console.error('Save failed:', e);
       return false;
     }
   };
 
-  // படம் எடுக்கும் செயல்பாடு
+  // CAPTURE WITH SCREENSHOT (MAIN METHOD)
   const handleCapture = async () => {
-    if (!cameraRef.current || !cameraInitialized || isTakingPhoto) {
-      Alert.alert('தகவல்', 'கேமரா தயாராக இல்லை.');
+    if (!cameraRef.current || !screenRef.current || isTakingPhoto) {
+      Alert.alert('Error', 'Camera not ready');
       return;
     }
 
     setIsTakingPhoto(true);
+    let finalPath: string | null = null;
 
     try {
-      const hasPermission = await checkStoragePermission();
-      
-      if (!hasPermission) {
-        const requested = await requestStoragePermission();
-        if (!requested) {
-          setShowPermissionModal(true);
-          setIsTakingPhoto(false);
-          return;
-        }
-      }
+      console.log('Taking screenshot with overlay...');
+      finalPath = await captureScreenWithOverlay(screenRef);
 
-      console.log('📸 Capturing photo...');
-      console.log('🎭 Selected template:', selectedTemplate?.name);
-      console.log('📍 Template position:', templatePosition);
-      
-      let finalImagePath;
-
-      if (selectedTemplate) {
-        // Screenshot capture
-        try {
-          console.log('🖼️ Attempting screenshot capture...');
-          const screenshotPath = await captureScreenWithTemplate(screenRef);
-          
-          if (screenshotPath) {
-            finalImagePath = screenshotPath;
-            console.log('✅ Screenshot captured with template');
-          } else {
-            throw new Error('Screenshot capture failed');
-          }
-        } catch (screenshotError) {
-          console.error('❌ Screenshot failed, using normal photo:', screenshotError);
-          // Fallback: Normal camera photo
-          const photo = await cameraRef.current.takePhoto({
-            flash: 'off',
-            qualityPrioritization: 'quality',
-          });
-          finalImagePath = photo.path;
-        }
-      } else {
-        // Normal photo without template
+      if (!finalPath) {
+        console.log('Screenshot failed, taking raw photo...');
         const photo = await cameraRef.current.takePhoto({
           flash: 'off',
           qualityPrioritization: 'quality',
         });
-        finalImagePath = photo.path;
+        finalPath = photo.path;
       }
 
-      console.log('✅ Final image path:', finalImagePath);
-
-      // படத்தை சேமிக்கவும்
-      const saved = await saveImageToGallery(finalImagePath);
-      
-      if (saved) {
-        Alert.alert(
-          'வெற்றி! 🎉', 
-          selectedTemplate 
-            ? `"${selectedTemplate.name}" டெம்ப்ளேட்டுடன் புகைப்படம் சேமிக்கப்பட்டது!\nPosition: ${templatePosition}` 
-            : 'புகைப்படம் சேமிக்கப்பட்டது!'
-        );
-      } else {
-        Alert.alert('தகவல்', 'புகைப்படம் எடுக்கப்பட்டது ஆனால் சேமிக்கப்படவில்லை.');
+      if (finalPath) {
+        const saved = await saveImageToGallery(finalPath);
+        if (saved) {
+          Alert.alert(
+            'Success!',
+            selectedTemplate
+              ? `"${selectedTemplate.name}" applied!`
+              : 'Photo saved!'
+          );
+        } else {
+          Alert.alert('Saved!', 'Check your gallery');
+        }
       }
     } catch (error) {
-      console.error('Capture error:', error);
-      Alert.alert('பிழை', `புகைப்படத்தை எடுக்க முடியவில்லை: ${error.message}`);
+      console.error('Capture failed:', error);
+      Alert.alert('Error', 'Failed to capture photo');
     } finally {
       setIsTakingPhoto(false);
     }
   };
 
   const handleOpenGallery = async () => {
-    const hasPermission = await checkStoragePermission();
-    
-    if (!hasPermission) {
-      const requested = await requestStoragePermission();
-      if (!requested) {
-        setShowPermissionModal(true);
-        return;
-      }
+    const ok = await checkStoragePermission() || (await requestStoragePermission());
+    if (!ok) {
+      setShowPermissionModal(true);
+      return;
     }
-
-    try {
-      const result = await launchImageLibrary({ 
-        mediaType: 'photo', 
-        selectionLimit: 1 
-      });
-      
-      if (result.didCancel) return;
-      
-      if (result.errorCode) {
-        Alert.alert('பிழை', `படத் தேர்வாளர் பிழை: ${result.errorMessage}`);
-        return;
-      }
-
-      console.log('Selected file:', result.assets?.[0]);
-    } catch (error) {
-      console.error('Open gallery error:', error);
-      Alert.alert('பிழை', `கேலரியைத் திறக்க முடியவில்லை: ${error.message}`);
-    }
+    await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
   };
 
-  const handleOpenTemplates = () => {
-    navigation.navigate('Templates');
-  };
+  const handleOpenTemplates = () => navigation.navigate('Templates');
+  const handleClearTemplate = () => setSelectedTemplate(null);
+  const openAppSettings = () => { Linking.openSettings(); setShowPermissionModal(false); };
 
-  const handleClearTemplate = () => {
-    setSelectedTemplate(null);
-    console.log('🗑️ Template cleared');
-  };
-
-  const openAppSettings = () => {
-    Linking.openSettings();
-    setShowPermissionModal(false);
-  };
-
-  // Loading state
   if (!cameraInitialized) {
     return (
       <SafeAreaView style={styles.centeredContainer}>
-        <View style={styles.centeredContainer}>
-          <Text style={styles.loadingText}>கேமரா தயாராகிறது...</Text>
-        </View>
+        <Text style={styles.loadingText}>கேமரா தயாராகிறது...</Text>
       </SafeAreaView>
     );
   }
@@ -395,13 +224,11 @@ export default function CameraScreen({ navigation, route }) {
   if (!hasCameraPermission) {
     return (
       <SafeAreaView style={styles.centeredContainer}>
-        <View style={styles.centeredContainer}>
-          <Icon name="camera-off" size={50} color="white" />
-          <Text style={styles.text}>கேமரா அனுமதி தேவை</Text>
-          <TouchableOpacity style={styles.button} onPress={checkCameraPermission}>
-            <Text style={styles.buttonText}>மீண்டும் முயற்சிக்கவும்</Text>
-          </TouchableOpacity>
-        </View>
+        <Icon name="camera-off" size={50} color="#fff" />
+        <Text style={styles.text}>Camera permission required</Text>
+        <TouchableOpacity style={styles.button} onPress={checkCameraPermission}>
+          <Text style={styles.buttonText}>Retry</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
@@ -409,10 +236,8 @@ export default function CameraScreen({ navigation, route }) {
   if (!device) {
     return (
       <SafeAreaView style={styles.centeredContainer}>
-        <View style={styles.centeredContainer}>
-          <Icon name="error-outline" size={50} color="white" />
-          <Text style={styles.text}>கேமரா சாதனம் எதுவும் கிடைக்கவில்லை</Text>
-        </View>
+        <Icon name="error-outline" size={50} color="#fff" />
+        <Text style={styles.text}>No camera device</Text>
       </SafeAreaView>
     );
   }
@@ -420,96 +245,79 @@ export default function CameraScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.container}>
       <View ref={screenRef} style={styles.screenshotContainer} collapsable={false}>
+        {/* CAMERA WITH BLACK BACKGROUND */}
         <Camera
           ref={cameraRef}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, { backgroundColor: 'black' }]}
           device={device}
-          isActive={cameraInitialized && hasCameraPermission}
+          isActive={true}
           photo={true}
+          resizeMode="cover"
         />
-        
-        {/* டெம்ப்ளேட் ஓவர்லே - SMALL & CORNER POSITION */}
+
+        {/* OVERLAY TEMPLATE */}
         {selectedTemplate && (
-          <View style={[styles.templateOverlay, getTemplatePositionStyle()]}>
-            <Image 
-              source={selectedTemplate.icon} 
-              style={styles.templateImage}
-              resizeMode="contain"
-            />
+          <View style={[styles.templateOverlay, getOverlayPosition()]}>
+            <Image source={{ uri: selectedTemplate.icon }} style={styles.templateImage} resizeMode="contain" />
             <View style={styles.templateControls}>
               <Text style={styles.templateName}>{selectedTemplate.name}</Text>
               <View style={styles.templateButtons}>
                 <TouchableOpacity onPress={changeTemplatePosition} style={styles.positionButton}>
-                  <Icon name="open-with" size={16} color="white" />
+                  <Icon name="open-with" size={16} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleClearTemplate} style={styles.clearButton}>
-                  <Icon name="close" size={16} color="white" />
+                  <Icon name="close" size={16} color="#fff" />
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         )}
-        
+
+        {/* BOTTOM CONTROLS */}
         <View style={styles.controlsContainer}>
           <TouchableOpacity style={styles.sideButton} onPress={handleOpenGallery}>
-            <Icon name="photo-library" size={28} color="white" />
+            <Icon name="photo-library" size={28} color="#fff" />
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.captureButton, isTakingPhoto && styles.captureButtonDisabled]}
             onPress={handleCapture}
             disabled={isTakingPhoto}
           >
             <View style={styles.captureInner} />
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.sideButton} onPress={handleOpenTemplates}>
-            <Icon name="dashboard" size={28} color="white" />
+            <Icon name="dashboard" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
 
+        {/* FLIP CAMERA */}
         <TouchableOpacity style={styles.flipButton} onPress={handleFlipCamera}>
-          <Icon name="flip-camera-ios" size={28} color="white" />
+          <Icon name="flip-camera-ios" size={28} color="#fff" />
         </TouchableOpacity>
 
+        {/* HINT */}
         {!selectedTemplate && (
           <View style={styles.templateHint}>
-            <Text style={styles.templateHintText}>
-              டெம்ப்ளேட் தேர்வு செய்ய கீழே உள்ள ஐகானை கிளிக் செய்யவும்
-            </Text>
-          </View>
-        )}
-
-        {/* Template Position Indicator */}
-        {selectedTemplate && (
-          <View style={styles.positionIndicator}>
-            <Text style={styles.positionText}>
-              Position: {templatePosition}
-            </Text>
+            <Text style={styles.templateHintText}>Choose a template</Text>
           </View>
         )}
       </View>
 
+      {/* PERMISSION MODAL */}
       {showPermissionModal && (
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Icon name="error-outline" size={50} color="#FF3B30" style={styles.modalIcon} />
-            <Text style={styles.modalTitle}>அனுமதி மறுக்கப்பட்டது</Text>
-            <Text style={styles.modalText}>
-              சேமிப்பு அனுமதி இல்லாமல் புகைப்படத்தை சேமிக்க முடியாது.
-            </Text>
+            <Text style={styles.modalTitle}>Permission Denied</Text>
+            <Text style={styles.modalText}>Storage needed to save photos</Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.settingsButton]}
-                onPress={openAppSettings}
-              >
-                <Text style={styles.settingsButtonText}>அமைப்புகளைத் திறக்கவும்</Text>
+              <TouchableOpacity style={[styles.modalButton, styles.settingsButton]} onPress={openAppSettings}>
+                <Text style={styles.settingsButtonText}>Open Settings</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowPermissionModal(false)}
-              >
-                <Text style={styles.cancelButtonText}>ரத்துசெய்</Text>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowPermissionModal(false)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -519,46 +327,16 @@ export default function CameraScreen({ navigation, route }) {
   );
 }
 
+// STYLES
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  screenshotContainer: {
-    flex: 1,
-  },
-  centeredContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    padding: 20,
-  },
-  loadingText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  text: {
-    color: '#FFF',
-    fontSize: 16,
-    marginTop: 12,
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  button: {
-    backgroundColor: '#FF3B30',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    minWidth: 200,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
+  container: { flex: 1, backgroundColor: '#000' },
+  screenshotContainer: { flex: 1 },
+  centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', padding: 20 },
+  loadingText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  text: { color: '#FFF', fontSize: 16, marginTop: 12, marginBottom: 20, textAlign: 'center' },
+  button: { backgroundColor: '#FF3B30', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, minWidth: 200, alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+
   controlsContainer: {
     position: 'absolute',
     bottom: 40,
@@ -581,19 +359,12 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 4,
-    borderColor: 'white',
+    borderColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  captureButtonDisabled: {
-    opacity: 0.5,
-  },
-  captureInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#FF3B30',
-  },
+  captureButtonDisabled: { opacity: 0.5 },
+  captureInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FF3B30' },
   flipButton: {
     position: 'absolute',
     top: 50,
@@ -605,35 +376,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Template Overlay Base Style
-  templateOverlay: {
-    position: 'absolute',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  // Different Template Positions
-  templateTopLeft: {
-    top: 80,
-    left: 20,
-  },
-  templateTopRight: {
-    top: 80,
-    right: 20,
-  },
-  templateBottomLeft: {
-    bottom: 120,
-    left: 20,
-  },
-  templateBottomRight: {
-    bottom: 120,
-    right: 20,
-  },
-  // Smaller Template Image
-  templateImage: {
-    width: 100,  // SMALLER SIZE
-    height: 100, // SMALLER SIZE
-    opacity: 0.9,
-  },
+
+  templateOverlay: { position: 'absolute', alignItems: 'center', zIndex: 10 },
+  templateImage: { width: 120, height: 120, opacity: 0.9 },
   templateControls: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -643,16 +388,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 15,
   },
-  templateName: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
-  templateButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  templateName: { color: '#FFF', fontSize: 12, fontWeight: 'bold', marginRight: 8 },
+  templateButtons: { flexDirection: 'row', alignItems: 'center' },
   positionButton: {
     width: 24,
     height: 24,
@@ -670,162 +407,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  templateHint: {
-    position: 'absolute',
-    bottom: 120,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  templateHintText: {
-    color: '#FFF',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  positionIndicator: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  positionText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+
+  templateHint: { position: 'absolute', bottom: 120, left: 0, right: 0, alignItems: 'center' },
+  templateHintText: { color: '#FFF', fontSize: 14, textAlign: 'center' },
+
   modalContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
-  modalContent: {
-    width: '80%',
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    alignItems: 'center',
-  },
-  modalIcon: {
-    marginBottom: 15,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    color: '#333',
-  },
-  modalText: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#555',
-    lineHeight: 22,
-  },
-  modalButtons: {
-    width: '100%',
-  },
-  modalButton: {
-    paddingVertical: 12,
-    borderRadius: 5,
-    alignItems: 'center',
-    marginVertical: 5,
-  },
-  settingsButton: {
-    backgroundColor: '#FF3B30',
-  },
-  cancelButton: {
-    backgroundColor: '#E0E0E0',
-  },
-  settingsButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  cancelButtonText: {
-    color: '#333',
-    fontWeight: 'bold',
-  },
+  modalContent: { width: '80%', backgroundColor: '#fff', borderRadius: 10, padding: 20, alignItems: 'center' },
+  modalIcon: { marginBottom: 15 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: '#333' },
+  modalText: { fontSize: 16, textAlign: 'center', marginBottom: 20, color: '#555', lineHeight: 22 },
+  modalButtons: { width: '100%' },
+  modalButton: { paddingVertical: 12, borderRadius: 5, alignItems: 'center', marginVertical: 5 },
+  settingsButton: { backgroundColor: '#FF3B30' },
+  cancelButton: { backgroundColor: '#E0E0E0' },
+  settingsButtonText: { color: '#fff', fontWeight: 'bold' },
+  cancelButtonText: { color: '#333', fontWeight: 'bold' },
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// // src/Create/Camera.tsx
 // import React, { useEffect, useState, useRef } from 'react';
 // import {
 //   View,
@@ -837,285 +441,217 @@ const styles = StyleSheet.create({
 //   Alert,
 //   Linking,
 //   AppState,
+//   Image,
 // } from 'react-native';
 // import { Camera, useCameraDevices } from 'react-native-vision-camera';
 // import { launchImageLibrary } from 'react-native-image-picker';
 // import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 // import Icon from 'react-native-vector-icons/MaterialIcons';
 // import { SafeAreaView } from 'react-native-safe-area-context';
-// import RNFS from 'react-native-fs';
+// import { captureScreenWithTemplate } from '../utils/ScreenshotMerger';
 
-// export default function CameraView({ navigation }) {
+// const TEMPLATE_IMAGES = {
+//   dog: require('../assets/dog-icon.png'),
+//   cat: require('../assets/cat-icon.png'),
+//   cow: require('../assets/cow-icon.png'),
+//   parrot: require('../assets/parrot-icon.png'),
+//   bunny: require('../assets/bunny-icon.png'),
+// };
+
+// export default function CameraScreen({ navigation, route }: any) {
 //   const [hasCameraPermission, setHasCameraPermission] = useState(false);
 //   const [hasStoragePermission, setHasStoragePermission] = useState(false);
-//   const [isFrontCamera, setIsFrontCamera] = useState(false);
+//   const [isFrontCamera, setIsFrontCamera] = useState(true);
 //   const [showPermissionModal, setShowPermissionModal] = useState(false);
 //   const [isTakingPhoto, setIsTakingPhoto] = useState(false);
-//   const cameraRef = useRef(null);
+//   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+//   const [cameraInitialized, setCameraInitialized] = useState(false);
+//   const [templatePosition, setTemplatePosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'>('top-right');
 
+//   const cameraRef = useRef<Camera>(null);
+//   const screenRef = useRef<View>(null);
 //   const devices = useCameraDevices();
-//   const device = devices?.find((d) => d.position === (isFrontCamera ? 'front' : 'back')) ?? devices?.[0] ?? null;
+//   const device = devices?.find(d => d.position === (isFrontCamera ? 'front' : 'back')) ?? devices?.[0] ?? null;
 
-//   // Function to check storage permission status
-//   const checkStoragePermission = async () => {
-//     try {
-//       let storageGranted = false;
-      
-//       if (Platform.OS === 'android') {
-//         if (Platform.Version >= 33) {
-//           // For Android 13+ - Check READ_MEDIA_IMAGES permission
-//           const hasImagesPerm = await PermissionsAndroid.check(
-//             PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-//           );
-//           storageGranted = hasImagesPerm;
-//           console.log('READ_MEDIA_IMAGES permission:', hasImagesPerm);
-//         } else {
-//           // For Android <13 - Check WRITE_EXTERNAL_STORAGE permission
-//           const hasStoragePerm = await PermissionsAndroid.check(
-//             PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE
-//           );
-//           storageGranted = hasStoragePerm;
-//           console.log('WRITE_EXTERNAL_STORAGE permission:', hasStoragePerm);
-//         }
-//       } else {
-//         // For iOS, we assume granted as CameraRoll handles permissions
-//         storageGranted = true;
-//       }
-      
-//       console.log('Storage permission checked:', storageGranted);
-//       setHasStoragePermission(storageGranted);
-//       return storageGranted;
-//     } catch (error) {
-//       console.error('Error checking storage permission:', error);
-//       return false;
+//   useEffect(() => {
+//     if (route.params?.selectedTemplate) {
+//       const tmpl = route.params.selectedTemplate;
+//       const name = tmpl.name.toLowerCase();
+//       const icon = TEMPLATE_IMAGES[name as keyof typeof TEMPLATE_IMAGES] ?? TEMPLATE_IMAGES.dog;
+//       setSelectedTemplate({ ...tmpl, icon });
+//     }
+//   }, [route.params]);
+
+//   const changeTemplatePosition = () => {
+//     const order = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+//     const idx = order.indexOf(templatePosition);
+//     setTemplatePosition(order[(idx + 1) % order.length]);
+//   };
+
+//   const getTemplatePositionStyle = () => {
+//     switch (templatePosition) {
+//       case 'top-left': return styles.templateTopLeft;
+//       case 'top-right': return styles.templateTopRight;
+//       case 'bottom-left': return styles.templateBottomLeft;
+//       case 'bottom-right': return styles.templateBottomRight;
+//       default: return styles.templateTopRight;
 //     }
 //   };
 
-//   // Function to request storage permission
+//   const checkStoragePermission = async () => {
+//     if (Platform.OS !== 'android') return true;
+//     const perm = Platform.Version >= 33
+//       ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+//       : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+//     const granted = await PermissionsAndroid.check(perm);
+//     setHasStoragePermission(granted);
+//     return granted;
+//   };
+
 //   const requestStoragePermission = async () => {
-//     try {
-//       let storageGranted = false;
-      
-//       if (Platform.OS === 'android') {
-//         if (Platform.Version >= 33) {
-//           // For Android 13+ - Request READ_MEDIA_IMAGES permission
-//           const result = await PermissionsAndroid.request(
-//             PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-//             {
-//               title: 'Storage Permission',
-//               message: 'This app needs access to your storage to save photos.',
-//               buttonPositive: 'OK',
-//             }
-//           );
-//           storageGranted = result === PermissionsAndroid.RESULTS.GRANTED;
-//           console.log('READ_MEDIA_IMAGES permission result:', result);
-//         } else {
-//           // For Android <13 - Request WRITE_EXTERNAL_STORAGE permission
-//           const result = await PermissionsAndroid.request(
-//             PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-//             {
-//               title: 'Storage Permission',
-//               message: 'This app needs access to your storage to save photos.',
-//               buttonPositive: 'OK',
-//             }
-//           );
-//           storageGranted = result === PermissionsAndroid.RESULTS.GRANTED;
-//           console.log('WRITE_EXTERNAL_STORAGE permission result:', result);
-//         }
-//       } else {
-//         // For iOS
-//         storageGranted = true;
+//     if (Platform.OS !== 'android') return true;
+//     const perm = Platform.Version >= 33
+//       ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+//       : PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+//     const result = await PermissionsAndroid.request(perm);
+//     const granted = result === PermissionsAndroid.RESULTS.GRANTED;
+//     setHasStoragePermission(granted);
+//     return granted;
+//   };
+
+//   const checkCameraPermission = async () => {
+//     if (Platform.OS === 'android') {
+//       const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+//       if (granted) {
+//         setHasCameraPermission(true);
+//         setCameraInitialized(true);
+//         return true;
 //       }
-      
-//       console.log('Storage permission requested:', storageGranted);
-//       setHasStoragePermission(storageGranted);
-//       return storageGranted;
-//     } catch (error) {
-//       console.error('Error requesting storage permission:', error);
-//       return false;
+//       const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+//       const ok = res === PermissionsAndroid.RESULTS.GRANTED;
+//       setHasCameraPermission(ok);
+//       setCameraInitialized(true);
+//       return ok;
+//     } else {
+//       const status = await Camera.requestCameraPermission();
+//       const ok = status === 'granted';
+//       setHasCameraPermission(ok);
+//       setCameraInitialized(true);
+//       return ok;
 //     }
 //   };
 
 //   useEffect(() => {
-//     const requestPermissions = async () => {
-//       try {
-//         // Camera permission
-//         const cameraStatus = await Camera.requestCameraPermission();
-//         let cameraGranted = cameraStatus === 'granted';
-        
-//         if (Platform.OS === 'android') {
-//           const cam = await PermissionsAndroid.request(
-//             PermissionsAndroid.PERMISSIONS.CAMERA,
-//             {
-//               title: 'Camera Permission',
-//               message: 'This app needs camera access to take photos and videos.',
-//               buttonPositive: 'OK',
-//             }
-//           );
-//           cameraGranted = cam === PermissionsAndroid.RESULTS.GRANTED;
-//         }
-        
-//         setHasCameraPermission(cameraGranted);
-//         console.log('Camera permission granted:', cameraGranted);
-
-//         // Request storage permission
-//         await requestStoragePermission();
-//       } catch (error) {
-//         console.error('Error requesting permissions:', error);
-//       }
+//     let mounted = true;
+//     const init = async () => {
+//       if (!mounted) return;
+//       await checkCameraPermission();
+//       await checkStoragePermission();
 //     };
-
-//     requestPermissions();
-
-//     // Add event listener for when app comes to foreground
-//     const subscription = AppState.addEventListener('change', async (nextAppState) => {
-//       if (nextAppState === 'active') {
-//         // Re-check permissions when app returns to foreground
-//         await checkStoragePermission();
-//       }
+//     const t = setTimeout(init, 800);
+//     const sub = AppState.addEventListener('change', async (s) => {
+//       if (s === 'active' && mounted) await checkStoragePermission();
 //     });
-
 //     return () => {
-//       subscription.remove();
+//       mounted = false;
+//       clearTimeout(t);
+//       sub.remove();
 //     };
 //   }, []);
 
-//   const handleFlipCamera = () => setIsFrontCamera((prev) => !prev);
+//   const handleFlipCamera = () => setIsFrontCamera(p => !p);
 
-//   // Alternative method to save image using react-native-share
-//   const saveImageToGallery = async (imagePath) => {
+//   const saveImageToGallery = async (path: string) => {
 //     try {
-//       // First try CameraRoll if available
-//       if (CameraRoll && CameraRoll.save) {
-//         const result = await CameraRoll.save(imagePath, { type: 'photo', album: 'Reals2Chat' });
-//         console.log('Photo saved with CameraRoll:', result);
-//         return true;
-//       }
-      
-//       // Fallback: Use react-native-share to save to gallery
-//       const Share = await import('react-native-share');
-//       const shareOptions = {
-//         url: `file://${imagePath}`,
-//         type: 'image/jpeg',
-//         saveToFiles: true,
-//       };
-      
-//       const result = await Share.default.open(shareOptions);
-//       console.log('Photo saved with react-native-share:', result);
+//       await CameraRoll.save(path, { type: 'photo', album: 'Reals2Chat' });
 //       return true;
-//     } catch (error) {
-//       console.error('Error saving image:', error);
+//     } catch (e) {
+//       console.error('Save failed:', e);
 //       return false;
 //     }
 //   };
 
 //   const handleCapture = async () => {
-//     if (!cameraRef.current || isTakingPhoto) {
+//     if (!cameraRef.current || !screenRef.current || isTakingPhoto) {
+//       Alert.alert('Error', 'Camera not ready');
 //       return;
 //     }
 
 //     setIsTakingPhoto(true);
-
-//     // Double-check permission before capturing
-//     const hasPermission = await checkStoragePermission();
-    
-//     if (!hasPermission) {
-//       // If no permission, try to request it
-//       const requested = await requestStoragePermission();
-//       if (!requested) {
-//         setShowPermissionModal(true);
-//       }
-//       setIsTakingPhoto(false);
-//       return;
-//     }
+//     let finalPath: string | null = null;
 
 //     try {
-//       const photo = await cameraRef.current.takePhoto({
-//         flash: 'off',
-//         qualityPrioritization: 'balanced',
-//       });
-
-//       console.log('Photo captured:', photo);
-
-//       // Try to save the photo to gallery
-//       const saved = await saveImageToGallery(photo.path);
-      
-//       if (saved) {
-//         Alert.alert('Success', 'Photo saved to gallery!');
+//       console.log('Trying ViewShot...');
+//       const shot = await captureScreenWithTemplate(screenRef);
+//       if (shot) {
+//         finalPath = shot;
+//         console.log('ViewShot captured:', finalPath);
 //       } else {
-//         Alert.alert(
-//           'Info', 
-//           `Photo captured but not saved to gallery. Path: ${photo.path}\n\nPlease check storage permissions.`
-//         );
+//         throw new Error('ViewShot returned null');
 //       }
-//     } catch (error) {
-//       console.error('Capture error:', error);
-//       Alert.alert('Error', `Failed to capture photo: ${error.message}`);
-//     } finally {
-//       setIsTakingPhoto(false);
+//     } catch (viewShotError) {
+//       console.warn('ViewShot failed → fallback', viewShotError);
+//       try {
+//         const photo = await cameraRef.current.takePhoto({
+//           flash: 'off',
+//           qualityPrioritization: 'quality',
+//         });
+//         finalPath = photo.path;
+//         console.log('Fallback raw photo:', finalPath);
+//       } catch (rawError) {
+//         console.error('Raw photo failed', rawError);
+//         Alert.alert('Error', 'Capture failed');
+//         setIsTakingPhoto(false);
+//         return;
+//       }
 //     }
+
+//     if (finalPath) {
+//       const saved = await saveImageToGallery(finalPath);
+//       if (saved) {
+//         Alert.alert(
+//           'Success!',
+//           selectedTemplate
+//             ? `"${selectedTemplate.name}" applied!`
+//             : 'Photo saved!'
+//         );
+//       } else {
+//         Alert.alert('Info', 'Captured but not saved');
+//       }
+//     }
+
+//     setIsTakingPhoto(false);
 //   };
 
 //   const handleOpenGallery = async () => {
-//     // Check storage permission before opening gallery
-//     const hasPermission = await checkStoragePermission();
-    
-//     if (!hasPermission) {
-//       // If no permission, try to request it
-//       const requested = await requestStoragePermission();
-//       if (!requested) {
-//         setShowPermissionModal(true);
-//         return;
-//       }
-//     }
-
-//     try {
-//       const result = await launchImageLibrary({ 
-//         mediaType: 'photo', 
-//         selectionLimit: 1 
-//       });
-      
-//       if (result.didCancel) {
-//         return;
-//       }
-      
-//       if (result.errorCode) {
-//         Alert.alert('Error', `Image picker error: ${result.errorMessage}`);
-//         return;
-//       }
-
-//       console.log('File selected:', result.assets?.[0]);
-//       // Handle the selected image here
-//     } catch (error) {
-//       console.error('Open gallery error:', error);
-//       Alert.alert('Error', `Failed to open gallery: ${error.message}`);
-//     }
-//   };
-
-//   const openAppSettings = () => {
-//     Linking.openSettings();
-//     setShowPermissionModal(false);
-//   };
-
-//   const handleRetryPermission = async () => {
-//     const granted = await requestStoragePermission();
-//     if (!granted) {
+//     const ok = await checkStoragePermission() || (await requestStoragePermission());
+//     if (!ok) {
 //       setShowPermissionModal(true);
-//     } else {
-//       setShowPermissionModal(false);
+//       return;
 //     }
+//     await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1 });
 //   };
+
+//   const handleOpenTemplates = () => navigation.navigate('Templates');
+//   const handleClearTemplate = () => setSelectedTemplate(null);
+//   const openAppSettings = () => { Linking.openSettings(); setShowPermissionModal(false); };
+
+//   if (!cameraInitialized) {
+//     return (
+//       <SafeAreaView style={styles.centeredContainer}>
+//         <Text style={styles.loadingText}>கேமரா தயாராகிறது...</Text>
+//       </SafeAreaView>
+//     );
+//   }
 
 //   if (!hasCameraPermission) {
 //     return (
 //       <SafeAreaView style={styles.centeredContainer}>
-//         <View style={styles.centeredContainer}>
-//           <Icon name="camera-off" size={50} color="white" />
-//           <Text style={styles.text}>Camera permission required</Text>
-//           <TouchableOpacity style={styles.button} onPress={() => Linking.openSettings()}>
-//             <Text style={styles.buttonText}>Open Settings</Text>
-//           </TouchableOpacity>
-//         </View>
+//         <Icon name="camera-off" size={50} color="#fff" />
+//         <Text style={styles.text}>Camera permission required</Text>
+//         <TouchableOpacity style={styles.button} onPress={checkCameraPermission}>
+//           <Text style={styles.buttonText}>Retry</Text>
+//         </TouchableOpacity>
 //       </SafeAreaView>
 //     );
 //   }
@@ -1123,72 +659,87 @@ const styles = StyleSheet.create({
 //   if (!device) {
 //     return (
 //       <SafeAreaView style={styles.centeredContainer}>
-//         <View style={styles.centeredContainer}>
-//           <Icon name="error-outline" size={50} color="white" />
-//           <Text style={styles.text}>No camera device found</Text>
-//         </View>
+//         <Icon name="error-outline" size={50} color="#fff" />
+//         <Text style={styles.text}>No camera device</Text>
 //       </SafeAreaView>
 //     );
 //   }
 
 //   return (
 //     <SafeAreaView style={styles.container}>
-//       <Camera
-//         ref={cameraRef}
-//         style={StyleSheet.absoluteFill}
-//         device={device}
-//         isActive={true}
-//         photo={true}
-//       />
-      
-//       <View style={styles.controlsContainer}>
-//         <TouchableOpacity style={styles.sideButton} onPress={handleOpenGallery}>
-//           <Icon name="photo-library" size={28} color="white" />
+//       <View ref={screenRef} style={styles.screenshotContainer} collapsable={false}>
+//         <Camera
+//           ref={cameraRef}
+//           style={StyleSheet.absoluteFill}
+//           device={device}
+//           isActive={true}
+//           photo={true}
+//         />
+
+//         {selectedTemplate && (
+//           <View style={[styles.templateOverlay, getTemplatePositionStyle()]}>
+//             <Image source={selectedTemplate.icon} style={styles.templateImage} resizeMode="contain" />
+//             <View style={styles.templateControls}>
+//               <Text style={styles.templateName}>{selectedTemplate.name}</Text>
+//               <View style={styles.templateButtons}>
+//                 <TouchableOpacity onPress={changeTemplatePosition} style={styles.positionButton}>
+//                   <Icon name="open-with" size={16} color="#fff" />
+//                 </TouchableOpacity>
+//                 <TouchableOpacity onPress={handleClearTemplate} style={styles.clearButton}>
+//                   <Icon name="close" size={16} color="#fff" />
+//                 </TouchableOpacity>
+//               </View>
+//             </View>
+//           </View>
+//         )}
+
+//         <View style={styles.controlsContainer}>
+//           <TouchableOpacity style={styles.sideButton} onPress={handleOpenGallery}>
+//             <Icon name="photo-library" size={28} color="#fff" />
+//           </TouchableOpacity>
+
+//           <TouchableOpacity
+//             style={[styles.captureButton, isTakingPhoto && styles.captureButtonDisabled]}
+//             onPress={handleCapture}
+//             disabled={isTakingPhoto}
+//           >
+//             <View style={styles.captureInner} />
+//           </TouchableOpacity>
+
+//           <TouchableOpacity style={styles.sideButton} onPress={handleOpenTemplates}>
+//             <Icon name="dashboard" size={28} color="#fff" />
+//           </TouchableOpacity>
+//         </View>
+
+//         <TouchableOpacity style={styles.flipButton} onPress={handleFlipCamera}>
+//           <Icon name="flip-camera-ios" size={28} color="#fff" />
 //         </TouchableOpacity>
-        
-//         <TouchableOpacity 
-//           style={[styles.captureButton, isTakingPhoto && styles.captureButtonDisabled]}
-//           onPress={handleCapture}
-//           disabled={isTakingPhoto}
-//         >
-//           <View style={styles.captureInner} />
-//         </TouchableOpacity>
-        
-//         <TouchableOpacity style={styles.sideButton} onPress={handleFlipCamera}>
-//           <Icon name="flip-camera-ios" size={28} color="white" />
-//         </TouchableOpacity>
+
+//         {!selectedTemplate && (
+//           <View style={styles.templateHint}>
+//             <Text style={styles.templateHintText}>Choose a template</Text>
+//           </View>
+//         )}
+
+//         {selectedTemplate && (
+//           <View style={styles.positionIndicator}>
+//             <Text style={styles.positionText}>Pos: {templatePosition}</Text>
+//           </View>
+//         )}
 //       </View>
 
-//       {/* Permission Denied Modal */}
 //       {showPermissionModal && (
 //         <View style={styles.modalContainer}>
 //           <View style={styles.modalContent}>
 //             <Icon name="error-outline" size={50} color="#FF3B30" style={styles.modalIcon} />
 //             <Text style={styles.modalTitle}>Permission Denied</Text>
-//             <Text style={styles.modalText}>
-//               Cannot save photo without storage permission. Please enable it in settings.
-//             </Text>
-            
+//             <Text style={styles.modalText}>Storage needed to save photos</Text>
 //             <View style={styles.modalButtons}>
-//               <TouchableOpacity 
-//                 style={[styles.modalButton, styles.settingsButton]}
-//                 onPress={openAppSettings}
-//               >
-//                 <Text style={styles.settingsButtonText}>OPEN SETTINGS</Text>
+//               <TouchableOpacity style={[styles.modalButton, styles.settingsButton]} onPress={openAppSettings}>
+//                 <Text style={styles.settingsButtonText}>Open Settings</Text>
 //               </TouchableOpacity>
-              
-//               <TouchableOpacity 
-//                 style={[styles.modalButton, styles.cancelButton]}
-//                 onPress={() => setShowPermissionModal(false)}
-//               >
-//                 <Text style={styles.cancelButtonText}>CANCEL</Text>
-//               </TouchableOpacity>
-
-//               <TouchableOpacity 
-//                 style={[styles.modalButton, styles.retryButton]}
-//                 onPress={handleRetryPermission}
-//               >
-//                 <Text style={styles.retryButtonText}>RETRY</Text>
+//               <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setShowPermissionModal(false)}>
+//                 <Text style={styles.cancelButtonText}>Cancel</Text>
 //               </TouchableOpacity>
 //             </View>
 //           </View>
@@ -1199,32 +750,14 @@ const styles = StyleSheet.create({
 // }
 
 // const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: '#000',
-//   },
-//   centeredContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: '#000',
-//   },
-//   text: {
-//     color: '#FFF',
-//     fontSize: 16,
-//     marginTop: 12,
-//     marginBottom: 20,
-//   },
-//   button: {
-//     backgroundColor: '#FF3B30',
-//     paddingHorizontal: 20,
-//     paddingVertical: 10,
-//     borderRadius: 5,
-//   },
-//   buttonText: {
-//     color: 'white',
-//     fontWeight: 'bold',
-//   },
+//   container: { flex: 1, backgroundColor: '#000' },
+//   screenshotContainer: { flex: 1 },
+//   centeredContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000', padding: 20 },
+//   loadingText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+//   text: { color: '#FFF', fontSize: 16, marginTop: 12, marginBottom: 20, textAlign: 'center' },
+//   button: { backgroundColor: '#FF3B30', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, minWidth: 200, alignItems: 'center' },
+//   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+
 //   controlsContainer: {
 //     position: 'absolute',
 //     bottom: 40,
@@ -1247,81 +780,86 @@ const styles = StyleSheet.create({
 //     height: 80,
 //     borderRadius: 40,
 //     borderWidth: 4,
-//     borderColor: 'white',
+//     borderColor: '#fff',
 //     justifyContent: 'center',
 //     alignItems: 'center',
 //   },
-//   captureButtonDisabled: {
-//     opacity: 0.5,
-//   },
-//   captureInner: {
-//     width: 60,
-//     height: 60,
-//     borderRadius: 30,
-//     backgroundColor: '#FF3B30',
-//   },
-//   // Modal styles
-//   modalContainer: {
+//   captureButtonDisabled: { opacity: 0.5 },
+//   captureInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FF3B30' },
+//   flipButton: {
 //     position: 'absolute',
-//     top: 0,
-//     left: 0,
-//     right: 0,
-//     bottom: 0,
+//     top: 50,
+//     right: 20,
+//     width: 50,
+//     height: 50,
+//     borderRadius: 25,
+//     backgroundColor: 'rgba(255,255,255,0.2)',
 //     justifyContent: 'center',
 //     alignItems: 'center',
-//     backgroundColor: 'rgba(0, 0, 0, 0.7)',
 //   },
-//   modalContent: {
-//     width: '80%',
-//     backgroundColor: 'white',
-//     borderRadius: 10,
-//     padding: 20,
+
+//   templateOverlay: { position: 'absolute', alignItems: 'center', zIndex: 10 },
+//   templateTopLeft: { top: 80, left: 20 },
+//   templateTopRight: { top: 80, right: 20 },
+//   templateBottomLeft: { bottom: 120, left: 20 },
+//   templateBottomRight: { bottom: 120, right: 20 },
+//   templateImage: { width: 100, height: 100, opacity: 0.9 },
+//   templateControls: {
+//     flexDirection: 'row',
 //     alignItems: 'center',
+//     marginTop: 5,
+//     backgroundColor: 'rgba(0,0,0,0.7)',
+//     paddingHorizontal: 10,
+//     paddingVertical: 5,
+//     borderRadius: 15,
 //   },
-//   modalIcon: {
-//     marginBottom: 15,
-//   },
-//   modalTitle: {
-//     fontSize: 20,
-//     fontWeight: 'bold',
-//     marginBottom: 10,
-//     color: '#333',
-//   },
-//   modalText: {
-//     fontSize: 16,
-//     textAlign: 'center',
-//     marginBottom: 20,
-//     color: '#555',
-//     lineHeight: 22,
-//   },
-//   modalButtons: {
-//     width: '100%',
-//   },
-//   modalButton: {
-//     paddingVertical: 12,
-//     borderRadius: 5,
-//     alignItems: 'center',
-//     marginVertical: 5,
-//   },
-//   settingsButton: {
-//     backgroundColor: '#FF3B30',
-//   },
-//   cancelButton: {
-//     backgroundColor: '#E0E0E0',
-//   },
-//   retryButton: {
+//   templateName: { color: '#FFF', fontSize: 12, fontWeight: 'bold', marginRight: 8 },
+//   templateButtons: { flexDirection: 'row', alignItems: 'center' },
+//   positionButton: {
+//     width: 24,
+//     height: 24,
+//     borderRadius: 12,
 //     backgroundColor: '#4CAF50',
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     marginRight: 5,
 //   },
-//   settingsButtonText: {
-//     color: 'white',
-//     fontWeight: 'bold',
+//   clearButton: {
+//     width: 24,
+//     height: 24,
+//     borderRadius: 12,
+//     backgroundColor: '#FF3B30',
+//     justifyContent: 'center',
+//     alignItems: 'center',
 //   },
-//   cancelButtonText: {
-//     color: '#333',
-//     fontWeight: 'bold',
+
+//   templateHint: { position: 'absolute', bottom: 120, left: 0, right: 0, alignItems: 'center' },
+//   templateHintText: { color: '#FFF', fontSize: 14, textAlign: 'center' },
+//   positionIndicator: {
+//     position: 'absolute',
+//     top: 50,
+//     left: 20,
+//     backgroundColor: 'rgba(0,0,0,0.7)',
+//     paddingHorizontal: 10,
+//     paddingVertical: 5,
+//     borderRadius: 10,
 //   },
-//   retryButtonText: {
-//     color: 'white',
-//     fontWeight: 'bold',
+//   positionText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
+
+//   modalContainer: {
+//     ...StyleSheet.absoluteFillObject,
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//     backgroundColor: 'rgba(0,0,0,0.7)',
 //   },
+//   modalContent: { width: '80%', backgroundColor: '#fff', borderRadius: 10, padding: 20, alignItems: 'center' },
+//   modalIcon: { marginBottom: 15 },
+//   modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10, color: '#333' },
+//   modalText: { fontSize: 16, textAlign: 'center', marginBottom: 20, color: '#555', lineHeight: 22 },
+//   modalButtons: { width: '100%' },
+//   modalButton: { paddingVertical: 12, borderRadius: 5, alignItems: 'center', marginVertical: 5 },
+//   settingsButton: { backgroundColor: '#FF3B30' },
+//   cancelButton: { backgroundColor: '#E0E0E0' },
+//   settingsButtonText: { color: '#fff', fontWeight: 'bold' },
+//   cancelButtonText: { color: '#333', fontWeight: 'bold' },
 // });

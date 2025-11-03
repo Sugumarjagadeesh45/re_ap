@@ -52,27 +52,70 @@ const HomeScreen = ({ navigation }) => {
     }
   }, [route.params, navigation]);
 
+
   // Check authentication state and user profile
-  useEffect(() => {
-    const checkAuthState = async () => {
-      if (hasCheckedAuth.current) return;
-      hasCheckedAuth.current = true;
+useEffect(() => {
+  const checkAuthState = async () => {
+    if (hasCheckedAuth.current) return;
+    hasCheckedAuth.current = true;
 
-      try {
-        const currentUser = getAuth().currentUser;
-        const token = await AsyncStorage.getItem('authToken');
-        const userInfo = await AsyncStorage.getItem('userInfo');
+    try {
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      const token = await AsyncStorage.getItem('authToken');
+      const userInfo = await AsyncStorage.getItem('userInfo');
 
-        let parsedUserInfo = null;
-        if (userInfo) {
+      let parsedUserInfo = null;
+      if (userInfo) {
+        try {
+          parsedUserInfo = JSON.parse(userInfo);
+        } catch (e) {
+          console.error('Error parsing userInfo:', e);
+        }
+      }
+
+      // If we have a Firebase user, that's our primary auth source
+      if (currentUser) {
+        console.log('Firebase user found:', currentUser.email);
+        
+        // If we don't have a backend token, try to get one
+        if (!token) {
           try {
-            parsedUserInfo = JSON.parse(userInfo);
-          } catch (e) {
-            console.error('Error parsing userInfo:', e);
+            const idToken = await currentUser.getIdToken();
+            const response = await fetch(`${API_URL}/api/auth/google-signin`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                email: currentUser.email,
+                name: currentUser.displayName,
+                idToken: idToken,
+              }),
+              timeout: 10000,
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              await AsyncStorage.setItem('authToken', data.token);
+              await AsyncStorage.setItem('userInfo', JSON.stringify({
+                email: data.user.email,
+                name: data.user.name,
+                phone: data.user.phone,
+                registrationComplete: data.user.registrationComplete
+              }));
+              setUserProfile(data.user);
+              setUser(parsedUserInfo || { email: currentUser.email });
+              setLoading(false);
+              return;
+            }
+          } catch (error) {
+            console.error('Error getting backend token from Firebase user:', error);
           }
         }
-
-        if (token && !currentUser) {
+        
+        // If we have a token, fetch user profile
+        if (token) {
           try {
             const response = await fetch(`${API_URL}/api/auth/profile`, {
               method: 'GET',
@@ -86,7 +129,7 @@ const HomeScreen = ({ navigation }) => {
             if (response.ok) {
               const userData = await response.json();
               setUserProfile(userData.user);
-              setUser(parsedUserInfo || { email: userData.user.email });
+              setUser(parsedUserInfo || { email: currentUser.email });
               // Pre-fill fields if available
               if (userData.user.name) setName(userData.user.name);
               if (userData.user.dateOfBirth) setDateOfBirth(new Date(userData.user.dateOfBirth));
@@ -101,63 +144,68 @@ const HomeScreen = ({ navigation }) => {
               return;
             }
           } catch (error) {
-            console.error('Error checking token validity:', error);
-            await AsyncStorage.removeItem('authToken');
-            await AsyncStorage.removeItem('userInfo');
-          }
-        } else if (!token && !currentUser) {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Login' }],
-          });
-          return;
-        }
-
-        setUser(currentUser || parsedUserInfo || { email: 'Backend User' });
-
-        if (token && currentUser) {
-          try {
-            const response = await fetch(`${API_URL}/api/auth/profile`, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              timeout: 10000,
-            });
-
-            if (response.ok) {
-              const userData = await response.json();
-              setUserProfile(userData.user);
-              // Pre-fill fields if available
-              if (userData.user.name) setName(userData.user.name);
-              if (userData.user.dateOfBirth) setDateOfBirth(new Date(userData.user.dateOfBirth));
-              if (userData.user.gender) setGender(userData.user.gender);
-            } else if (response.status === 401) {
-              await AsyncStorage.removeItem('authToken');
-              await AsyncStorage.removeItem('userInfo');
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            }
-          } catch (error) {
             console.error('Error checking user profile:', error);
           }
         }
-      } catch (error) {
-        console.error('Error checking auth state:', error);
+        
+        setUser(currentUser || parsedUserInfo || { email: 'Backend User' });
+      } 
+      // If we don't have a Firebase user but have a token, check token validity
+      else if (token) {
+        try {
+          const response = await fetch(`${API_URL}/api/auth/profile`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            timeout: 10000,
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            setUserProfile(userData.user);
+            setUser(parsedUserInfo || { email: userData.user.email });
+            // Pre-fill fields if available
+            if (userData.user.name) setName(userData.user.name);
+            if (userData.user.dateOfBirth) setDateOfBirth(new Date(userData.user.dateOfBirth));
+            if (userData.user.gender) setGender(userData.user.gender);
+          } else if (response.status === 401) {
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('userInfo');
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking token validity:', error);
+          await AsyncStorage.removeItem('authToken');
+          await AsyncStorage.removeItem('userInfo');
+        }
+      }
+      // If we have neither, navigate to login
+      else {
         navigation.reset({
           index: 0,
           routes: [{ name: 'Login' }],
         });
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
+    } catch (error) {
+      console.error('Error checking auth state:', error);
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    checkAuthState();
-  }, [navigation]);
+  checkAuthState();
+}, [navigation]);
 
   // Show modal for new users
   useEffect(() => {
