@@ -23,19 +23,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import API_URL from './utiliti/config';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// Enhanced theme for professional look
+// Modern theme with professional colors
 const theme = {
-  background: '#121212',
-  surface: '#1E1E1E',
+  background: '#0F0F23',
+  surface: '#1A1A2E',
+  surfaceLight: '#252547',
   text: '#FFFFFF',
   textSecondary: 'rgba(255, 255, 255, 0.7)',
+  textTertiary: 'rgba(255, 255, 255, 0.5)',
   primary: '#6366F1',
   primaryLight: '#818CF8',
+  primaryDark: '#4F46E5',
   secondary: '#0EA5E9',
   accent: '#8B5CF6',
   success: '#10B981',
   error: '#EF4444',
   warning: '#F59E0B',
+  border: 'rgba(255, 255, 255, 0.1)',
+  borderLight: 'rgba(255, 255, 255, 0.05)',
 };
 
 const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -57,12 +62,13 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   
-  // User ID state
+  // Enhanced User ID state
   const [userId, setUserId] = useState('');
   const [userIdMode, setUserIdMode] = useState<'auto' | 'custom'>('auto');
   const [userIdVerified, setUserIdVerified] = useState(false);
   const [checkingUserId, setCheckingUserId] = useState(false);
   const [userIdError, setUserIdError] = useState('');
+  const [userIdTouched, setUserIdTouched] = useState(false);
   
   // Verification states
   const [phoneVerified, setPhoneVerified] = useState(false);
@@ -119,10 +125,11 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   }, [userIdMode]);
 
-  // User ID functions
+  // Enhanced User ID functions
   const handleGenerateUserId = async () => {
     try {
       setCheckingUserId(true);
+      setUserIdError('');
       const response = await fetch(`${API_URL}/api/auth/generate-user-id`, {
         method: 'GET',
         headers: {
@@ -135,12 +142,14 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         setUserId(data.userId);
         setUserIdVerified(true);
         setUserIdError('');
+        showQuickAlert('Auto-generated User ID created!', 'success');
       } else {
         throw new Error(data.message || 'Failed to generate User ID');
       }
     } catch (error: any) {
       console.error('Generate user ID error:', error);
       showQuickAlert('Failed to generate User ID. Please try again.', 'error');
+      setUserIdVerified(false);
     } finally {
       setCheckingUserId(false);
     }
@@ -154,6 +163,7 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     
     try {
       setCheckingUserId(true);
+      setUserIdError('');
       const response = await fetch(`${API_URL}/api/auth/check-user-id`, {
         method: 'POST',
         headers: {
@@ -186,11 +196,31 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setUserIdMode(mode);
     setUserIdVerified(false);
     setUserIdError('');
+    setUserIdTouched(false);
     
     if (mode === 'auto') {
       handleGenerateUserId();
     } else {
       setUserId('');
+    }
+  };
+
+  const validateUserId = (text: string) => {
+    if (text.length < 6) return 'Must be at least 6 characters';
+    if (!/\d/.test(text)) return 'Must contain at least one number';
+    if (!/^[a-zA-Z0-9]+$/.test(text)) return 'No special characters allowed';
+    return null;
+  };
+
+  const handleUserIdChange = (text: string) => {
+    const cleanedText = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    setUserId(cleanedText);
+    setUserIdTouched(true);
+    
+    if (userIdMode === 'custom') {
+      setUserIdVerified(false);
+      const validationError = validateUserId(cleanedText);
+      setUserIdError(validationError || '');
     }
   };
 
@@ -346,65 +376,63 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-const handleSendEmailOTP = async () => {
-  if (!email) {
-    showQuickAlert('Please enter an email address', 'error');
-    return;
-  }
-  if (!validateEmail(email)) {
-    showQuickAlert('Please enter a valid email address', 'error');
-    return;
-  }
-
-  triggerButtonHighlight();
-  
-  try {
-    setSendingOTP({ ...sendingOTP, email: true });
-    
-    // Generate OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    setEmailOTPGenerated(otp);
-    
-    console.log('Generated OTP:', otp); // For testing - remove in production
-    
-    // Try to send via backend first
-    try {
-      const response = await fetch(`${API_URL}/api/auth/send-otp-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          name: name || 'User',
-          otp,
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        setShowEmailOTPModal(true);
-        showQuickAlert('OTP sent to your email!', 'success');
-      } else {
-        // If backend fails, show OTP directly for testing
-        setShowEmailOTPModal(true);
-        showQuickAlert(`Backend email service unavailable. Use OTP: ${otp}`, 'warning');
-      }
-    } catch (backendError) {
-      // If backend completely fails, show OTP directly
-      console.log('Backend email service failed, showing OTP directly:', otp);
-      setShowEmailOTPModal(true);
-      showQuickAlert(`Email service temporary unavailable. Use OTP: ${otp}`, 'warning');
+  const handleSendEmailOTP = async () => {
+    if (!email) {
+      showQuickAlert('Please enter an email address', 'error');
+      return;
     }
+    if (!validateEmail(email)) {
+      showQuickAlert('Please enter a valid email address', 'error');
+      return;
+    }
+
+    triggerButtonHighlight();
     
-  } catch (error: any) {
-    console.error('Email OTP error:', error);
-    showQuickAlert('Failed to process OTP request. Please try again.', 'error');
-  } finally {
-    setSendingOTP({ ...sendingOTP, email: false });
-  }
-};
+    try {
+      setSendingOTP({ ...sendingOTP, email: true });
+      
+      // Generate OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      setEmailOTPGenerated(otp);
+      
+      console.log('Generated OTP:', otp);
+      
+      // Try to send via backend first
+      try {
+        const response = await fetch(`${API_URL}/api/auth/send-otp-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            name: name || 'User',
+            otp,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          setShowEmailOTPModal(true);
+          showQuickAlert('OTP sent to your email!', 'success');
+        } else {
+          setShowEmailOTPModal(true);
+          showQuickAlert(`Backend email service unavailable. Use OTP: ${otp}`, 'warning');
+        }
+      } catch (backendError) {
+        console.log('Backend email service failed, showing OTP directly:', otp);
+        setShowEmailOTPModal(true);
+        showQuickAlert(`Email service temporary unavailable. Use OTP: ${otp}`, 'warning');
+      }
+      
+    } catch (error: any) {
+      console.error('Email OTP error:', error);
+      showQuickAlert('Failed to process OTP request. Please try again.', 'error');
+    } finally {
+      setSendingOTP({ ...sendingOTP, email: false });
+    }
+  };
 
   const handleEmailOTPChange = (text: string, index: number) => {
     const newOTP = [...emailOTP];
@@ -553,6 +581,7 @@ const handleSendEmailOTP = async () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={theme.background} />
+      
       {/* Background with gradient circles */}
       <View style={styles.background}>
         <View style={[styles.gradientCircle, styles.circle1]} />
@@ -560,6 +589,7 @@ const handleSendEmailOTP = async () => {
         <View style={[styles.gradientCircle, styles.circle3]} />
         <View style={[styles.gradientCircle, styles.circle4]} />
       </View>
+      
       {/* Quick Alert */}
       {alertVisible && (
         <Animated.View
@@ -600,223 +630,291 @@ const handleSendEmailOTP = async () => {
           <Text style={styles.appName}>Reals TO Chat</Text>
           <Text style={styles.tagline}>Create. Connect. Chat.</Text>
         </Animated.View>
+        
         {/* Registration Form */}
         <Animated.View style={[styles.formContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            alwaysBounceVertical={false}
+            overScrollMode="never"
           >
             <Text style={styles.sectionTitle}>Create Account</Text>
             
             {/* Name Field */}
-            <View style={styles.inputContainer}>
-              <Icon name="person" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Full Name"
-                placeholderTextColor={theme.textSecondary}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                autoCorrect={false}
-              />
-            </View>
-
-            {/* Phone Field */}
-            <View style={styles.inputContainer}>
-              <Icon name="phone" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <View style={styles.phoneInputWrapper}>
-                <Text style={styles.countryCode}>+91</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Full Name</Text>
+              <View style={styles.inputContainer}>
+                <Icon name="person" size={20} color={theme.textSecondary} style={styles.inputIcon} />
                 <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Phone Number"
-                  placeholderTextColor={theme.textSecondary}
-                  keyboardType="phone-pad"
-                  value={phone}
-                  onChangeText={setPhone}
-                  maxLength={10}
+                  style={styles.input}
+                  placeholder="Enter your full name"
+                  placeholderTextColor={theme.textTertiary}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  autoCorrect={false}
                 />
               </View>
-              <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
-                <TouchableOpacity
-                  style={[
-                    styles.verifyButton,
-                    phoneVerified ? styles.verifiedButton : isPhoneValid ? styles.validButton : styles.unverifiedButton,
-                    (sendingOTP.phone || loading) && styles.disabledButton,
-                  ]}
-                  onPress={handleSendPhoneOTP}
-                  disabled={phoneVerified || sendingOTP.phone || loading || !isPhoneValid}
-                >
-                  {sendingOTP.phone ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : phoneVerified ? (
-                    <Icon name="check-circle" size={20} color="#FFF" />
-                  ) : (
-                    <Text style={styles.verifyButtonText}>Verify</Text>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
             </View>
 
-            {/* Email Field */}
-            <View style={styles.inputContainer}>
-              <Icon name="email" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.emailInput}
-                placeholder="Email Address"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-              />
-              <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
-                <TouchableOpacity
-                  style={[
-                    styles.verifyButton,
-                    emailVerified ? styles.verifiedButton : isEmailValid ? styles.validButton : styles.unverifiedButton,
-                    (sendingOTP.email || loading) && styles.disabledButton,
-                  ]}
-                  onPress={handleSendEmailOTP}
-                  disabled={emailVerified || sendingOTP.email || loading || !isEmailValid}
-                >
-                  {sendingOTP.email ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : emailVerified ? (
-                    <Icon name="check-circle" size={20} color="#FFF" />
-                  ) : (
-                    <Text style={styles.verifyButtonText}>Verify</Text>
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-
-            {/* User ID Field */}
-            <View style={styles.inputContainer}>
-              <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <View style={styles.userIdContainer}>
-                <TextInput
-                  style={[styles.userIdInput, !userIdVerified && userIdMode === 'custom' && styles.unverifiedInput]}
-                  placeholder="User ID"
-                  placeholderTextColor={theme.textSecondary}
-                  value={userId}
-                  onChangeText={(text) => {
-                    setUserId(text);
-                    if (userIdMode === 'custom') {
-                      setUserIdVerified(false);
-                    }
-                    setUserIdError('');
-                  }}
-                  editable={userIdMode === 'custom'}
-                  autoCapitalize="characters"
-                />
-                <View style={styles.userIdControls}>
+            {/* Phone Field - COMPACT DESIGN */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Mobile Number</Text>
+              <View style={styles.compactInputContainer}>
+                <View style={styles.phoneInputContent}>
+                  <Icon name="phone" size={18} color={theme.textSecondary} style={styles.compactInputIcon} />
+                  <View style={styles.compactPhoneInputWrapper}>
+                    <Text style={styles.compactCountryCode}>+91</Text>
+                    <TextInput
+                      style={styles.compactPhoneInput}
+                      placeholder="Enter your number"
+                      placeholderTextColor={theme.textTertiary}
+                      keyboardType="phone-pad"
+                      value={phone}
+                      onChangeText={setPhone}
+                      maxLength={10}
+                    />
+                  </View>
+                </View>
+                <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
                   <TouchableOpacity
-                    style={[styles.userIdModeButton, userIdMode === 'auto' && styles.activeUserIdMode]}
+                    style={[
+                      styles.compactVerifyButton,
+                      phoneVerified ? styles.compactVerifiedButton : isPhoneValid ? styles.compactValidButton : styles.compactUnverifiedButton,
+                      (sendingOTP.phone || loading) && styles.disabledButton,
+                    ]}
+                    onPress={handleSendPhoneOTP}
+                    disabled={phoneVerified || sendingOTP.phone || loading || !isPhoneValid}
+                  >
+                    {sendingOTP.phone ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : phoneVerified ? (
+                      <Icon name="check-circle" size={14} color="#FFF" />
+                    ) : (
+                      <Text style={styles.compactVerifyButtonText}>Verify</Text>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            </View>
+
+            {/* Email Field - COMPACT DESIGN */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email Address</Text>
+              <View style={styles.compactInputContainer}>
+                <View style={styles.emailInputContent}>
+                  <Icon name="email" size={18} color={theme.textSecondary} style={styles.compactInputIcon} />
+                  <TextInput
+                    style={styles.compactEmailInput}
+                    placeholder="Enter your email address"
+                    placeholderTextColor={theme.textTertiary}
+                    keyboardType="email-address"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                  />
+                </View>
+                <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
+                  <TouchableOpacity
+                    style={[
+                      styles.compactVerifyButton,
+                      emailVerified ? styles.compactVerifiedButton : isEmailValid ? styles.compactValidButton : styles.compactUnverifiedButton,
+                      (sendingOTP.email || loading) && styles.disabledButton,
+                    ]}
+                    onPress={handleSendEmailOTP}
+                    disabled={emailVerified || sendingOTP.email || loading || !isEmailValid}
+                  >
+                    {sendingOTP.email ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : emailVerified ? (
+                      <Icon name="check-circle" size={14} color="#FFF" />
+                    ) : (
+                      <Text style={styles.compactVerifyButtonText}>Verify</Text>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            </View>
+
+            {/* Enhanced User ID Field - PERFECT DESIGN (Keep as is) */}
+            <View style={styles.inputGroup}>
+              <View style={styles.userIdHeader}>
+                <Text style={styles.inputLabel}>User ID</Text>
+                <View style={styles.userIdModeSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.userIdModeOption,
+                      userIdMode === 'auto' && styles.userIdModeOptionActive,
+                    ]}
                     onPress={() => handleUserIdModeChange('auto')}
                   >
-                    <Text style={styles.userIdModeText}>A</Text>
+                    <Text style={[
+                      styles.userIdModeText,
+                      userIdMode === 'auto' && styles.userIdModeTextActive
+                    ]}>
+                      Auto-generate
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.userIdModeButton, userIdMode === 'custom' && styles.activeUserIdMode]}
+                    style={[
+                      styles.userIdModeOption,
+                      userIdMode === 'custom' && styles.userIdModeOptionActive,
+                    ]}
                     onPress={() => handleUserIdModeChange('custom')}
                   >
-                    <Text style={styles.userIdModeText}>C</Text>
+                    <Text style={[
+                      styles.userIdModeText,
+                      userIdMode === 'custom' && styles.userIdModeTextActive
+                    ]}>
+                      Custom
+                    </Text>
                   </TouchableOpacity>
-                  {userIdMode === 'custom' && (
+                </View>
+              </View>
+              
+              <View style={styles.userIdInputContainer}>
+                <View style={[
+                  styles.userIdInputWrapper,
+                  userIdMode === 'auto' && styles.userIdInputDisabled,
+                  userIdError && styles.userIdInputError
+                ]}>
+                  <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.userIdInput}
+                    placeholder={userIdMode === 'auto' ? 'Auto-generating...' : 'Enter your User ID'}
+                    placeholderTextColor={theme.textTertiary}
+                    value={userId}
+                    onChangeText={handleUserIdChange}
+                    editable={userIdMode === 'custom'}
+                    autoCapitalize="characters"
+                    maxLength={20}
+                  />
+                  
+                  {userIdMode === 'custom' && userId && !userIdVerified && (
                     <TouchableOpacity
                       style={[
                         styles.verifyUserIdButton,
-                        userIdVerified ? styles.verifiedButton : styles.unverifiedButton,
-                        (checkingUserId || loading) && styles.disabledButton,
+                        (checkingUserId || loading || !!userIdError) && styles.disabledButton,
                       ]}
                       onPress={handleVerifyUserId}
-                      disabled={checkingUserId || loading || !userId}
+                      disabled={checkingUserId || loading || !!userIdError}
                     >
                       {checkingUserId ? (
                         <ActivityIndicator size="small" color="#FFF" />
-                      ) : userIdVerified ? (
-                        <Icon name="check-circle" size={16} color="#FFF" />
                       ) : (
                         <Text style={styles.verifyUserIdText}>Verify</Text>
                       )}
                     </TouchableOpacity>
                   )}
+                  
+                  {userIdVerified && (
+                    <View style={styles.verifiedIndicator}>
+                      <Icon name="check-circle" size={20} color={theme.success} />
+                    </View>
+                  )}
+                </View>
+                
+                {/* User ID Status */}
+                <View style={styles.userIdStatus}>
+                  {userIdError ? (
+                    <Text style={styles.userIdErrorText}>{userIdError}</Text>
+                  ) : userIdVerified ? (
+                    <Text style={styles.userIdSuccessText}>User ID is available and valid</Text>
+                  ) : userIdMode === 'auto' ? (
+                    <Text style={styles.userIdHelperText}>We'll automatically create a unique ID for you</Text>
+                  ) : (
+                    <Text style={styles.userIdHelperText}>
+                      Must be 6+ characters, include a number, no special characters
+                    </Text>
+                  )}
                 </View>
               </View>
             </View>
-            {userIdError ? (
-              <Text style={styles.errorText}>{userIdError}</Text>
-            ) : (
-              <Text style={styles.helperText}>
-                {userIdMode === 'auto' 
-                  ? 'Auto-generated User ID' 
-                  : 'Must be 6+ characters, include a number, no special characters'
-                }
-              </Text>
-            )}
 
             {/* Password Fields */}
-            <View style={styles.inputContainer}>
-              <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor={theme.textSecondary}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                autoCapitalize="none"
-              />
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Password</Text>
+              <View style={styles.inputContainer}>
+                <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Create a strong password"
+                  placeholderTextColor={theme.textTertiary}
+                  secureTextEntry
+                  value={password}
+                  onChangeText={setPassword}
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
-            <View style={styles.inputContainer}>
-              <Icon name="lock-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm Password"
-                placeholderTextColor={theme.textSecondary}
-                secureTextEntry
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                autoCapitalize="none"
-              />
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Confirm Password</Text>
+              <View style={styles.inputContainer}>
+                <Icon name="lock-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm your password"
+                  placeholderTextColor={theme.textTertiary}
+                  secureTextEntry
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
 
             {/* Date of Birth */}
-            <TouchableOpacity style={styles.datePickerContainer} onPress={() => setShowDatePicker(true)}>
-              <Icon name="event" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-              <Text style={styles.datePickerText}>{formatDate(dateOfBirth)}</Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={dateOfBirth}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-                maximumDate={new Date()}
-              />
-            )}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Date of Birth</Text>
+              <TouchableOpacity 
+                style={styles.datePickerContainer} 
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Icon name="event" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+                <Text style={styles.datePickerText}>{formatDate(dateOfBirth)}</Text>
+                <Icon name="calendar-today" size={18} color={theme.textTertiary} style={styles.calendarIcon} />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={dateOfBirth}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                  maximumDate={new Date()}
+                />
+              )}
+            </View>
 
             {/* Gender */}
-            <Text style={styles.genderLabel}>Gender</Text>
-            <View style={styles.genderContainer}>
-              {['male', 'female', 'other'].map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[styles.genderOption, gender === option && styles.selectedGender]}
-                  onPress={() => setGender(option)}
-                >
-                  <Text style={[styles.genderText, gender === option && styles.selectedGenderText]}>
-                    {option.charAt(0).toUpperCase() + option.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Gender</Text>
+              <View style={styles.genderContainer}>
+                {['male', 'female', 'other'].map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[
+                      styles.genderOption,
+                      gender === option && styles.selectedGender,
+                    ]}
+                    onPress={() => setGender(option)}
+                  >
+                    <Text style={[
+                      styles.genderText,
+                      gender === option && styles.selectedGenderText
+                    ]}>
+                      {option.charAt(0).toUpperCase() + option.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
 
             {/* Submit Button */}
             <TouchableOpacity
-              style={[styles.button, styles.registerButton, loading && styles.disabledButton]}
+              style={[styles.submitButton, loading && styles.disabledButton]}
               onPress={handleSubmit}
               disabled={loading}
             >
@@ -824,16 +922,24 @@ const handleSendEmailOTP = async () => {
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <Text style={styles.buttonText}>Create Account</Text>
+                  <Text style={styles.submitButtonText}>Create Account</Text>
                   <Icon name="arrow-forward" size={20} color="#FFF" style={styles.buttonIcon} />
                 </>
               )}
             </TouchableOpacity>
             
-            {/* Login Link */}
-            <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()} disabled={loading}>
-              <Text style={styles.cancelButtonText}>Already have an account? Sign In</Text>
-            </TouchableOpacity>
+            {/* Login Link with proper bottom spacing */}
+            <View style={styles.bottomSpacing}>
+              <TouchableOpacity 
+                style={styles.cancelButton} 
+                onPress={() => navigation.goBack()} 
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>
+                  Already have an account? <Text style={styles.cancelButtonLink}>Sign In</Text>
+                </Text>
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -849,7 +955,9 @@ const handleSendEmailOTP = async () => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Verify Phone Number</Text>
-              <Text style={styles.modalSubtitle}>Enter the 6-digit code sent to +91{phone}</Text>
+              <Text style={styles.modalSubtitle}>
+                We've sent a 6-digit code to +91{phone}
+              </Text>
             </View>
             <View style={styles.otpContainer}>
               {phoneOTP.map((digit, index) => (
@@ -901,7 +1009,9 @@ const handleSendEmailOTP = async () => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Verify Email Address</Text>
-              <Text style={styles.modalSubtitle}>Enter the 6-digit code sent to {email}</Text>
+              <Text style={styles.modalSubtitle}>
+                Enter the 6-digit code sent to {email}
+              </Text>
             </View>
             <View style={styles.otpContainer}>
               {emailOTP.map((digit, index) => (
@@ -960,7 +1070,7 @@ const styles = StyleSheet.create({
   gradientCircle: {
     position: 'absolute',
     borderRadius: 500,
-    opacity: 0.3,
+    opacity: 0.15,
   },
   circle1: {
     width: Dimensions.get('window').width * 1.5,
@@ -986,7 +1096,7 @@ const styles = StyleSheet.create({
   circle4: {
     width: Dimensions.get('window').width * 0.6,
     height: Dimensions.get('window').width * 0.6,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.surfaceLight,
     top: Dimensions.get('window').height * 0.3,
     right: -Dimensions.get('window').width * 0.1,
   },
@@ -995,24 +1105,24 @@ const styles = StyleSheet.create({
     top: Dimensions.get('window').height * 0.12,
     left: 20,
     right: 20,
-    padding: 12,
-    borderRadius: 8,
+    padding: 16,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 1000,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowRadius: 8,
+    elevation: 8,
   },
   alertIcon: {
-    marginRight: 8,
+    marginRight: 12,
   },
   alertText: {
     color: '#FFF',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     flex: 1,
   },
   content: {
@@ -1023,14 +1133,19 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginTop: Dimensions.get('window').height * 0.03,
-    marginBottom: 10,
+    marginTop: Dimensions.get('window').height * 0.02,
+    marginBottom: 20,
   },
   logoWrapper: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    padding: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 16,
     borderRadius: 20,
-    marginBottom: 10,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   logo: {
     width: 60,
@@ -1039,220 +1154,307 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: '800',
     color: 'white',
-    marginBottom: 5,
-    letterSpacing: 0.5,
+    marginBottom: 6,
+    letterSpacing: 0.8,
+    textShadowColor: 'rgba(255, 255, 255, 0.3)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   tagline: {
     fontSize: 14,
     color: theme.textSecondary,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    fontWeight: '500',
   },
   formContainer: {
     width: '90%',
     backgroundColor: theme.surface,
     borderRadius: 20,
-    padding: 20,
+    padding: 24,
     marginTop: 10,
-    maxHeight: '75%',
+    maxHeight: '80%',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
   },
   scrollContent: {
-    paddingBottom: 10,
+    paddingBottom: 40, // Increased bottom padding for safe area
+  },
+  bottomSpacing: {
+    paddingTop: 10,
+    paddingBottom: 20, // Extra padding for safe area
   },
   sectionTitle: {
     color: 'white',
-    fontSize: 22,
-    marginBottom: 25,
+    fontSize: 24,
+    marginBottom: 30,
     textAlign: 'center',
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    color: theme.text,
+    fontSize: 14,
     fontWeight: '600',
+    marginBottom: 8,
+    marginLeft: 4,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    height: 50,
+    height: 52,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.border,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    marginBottom: 15,
-    paddingHorizontal: 10,
+    backgroundColor: theme.surfaceLight,
+    paddingHorizontal: 16,
   },
   inputIcon: {
-    marginRight: 10,
+    marginRight: 12,
   },
   input: {
     flex: 1,
-    color: '#FFFFFF',
+    color: theme.text,
     fontSize: 16,
     fontWeight: '500',
     paddingVertical: 8,
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
-  phoneInputWrapper: {
+
+  // COMPACT INPUT STYLES FOR PHONE AND EMAIL
+  compactInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-  },
-  countryCode: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-    marginRight: 5,
-  },
-  phoneInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
+    width: '100%',
+    height: 48, // Reduced height for compact look
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 12,
+    backgroundColor: theme.surfaceLight,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
   },
-  emailInput: {
-    flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-    paddingVertical: 8,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  // User ID Styles
-  userIdContainer: {
+  phoneInputContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  userIdInput: {
+  emailInputContent: {
     flex: 1,
-    color: '#FFFFFF',
-    fontSize: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactInputIcon: {
+    marginRight: 10,
+    width: 18,
+  },
+  compactPhoneInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactCountryCode: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 8,
+    backgroundColor: theme.primaryDark,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  compactPhoneInput: {
+    flex: 1,
+    color: theme.text,
+    fontSize: 14, // Slightly smaller font
     fontWeight: '500',
-    paddingVertical: 8,
+    paddingVertical: 4,
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
-  unverifiedInput: {
-    borderRightWidth: 2,
-    borderRightColor: theme.warning,
+  compactEmailInput: {
+    flex: 1,
+    color: theme.text,
+    fontSize: 14, // Slightly smaller font
+    fontWeight: '500',
+    paddingVertical: 4,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
-  userIdControls: {
-    flexDirection: 'row',
+  compactVerifyButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 60,
+    height: 32,
     alignItems: 'center',
-    marginLeft: 10,
-  },
-  userIdModeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 2,
+    marginLeft: 8,
   },
-  activeUserIdMode: {
+  compactUnverifiedButton: {
+    backgroundColor: theme.surfaceLight,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  compactValidButton: {
+    backgroundColor: theme.primary,
+  },
+  compactVerifiedButton: {
+    backgroundColor: theme.success,
+  },
+  compactVerifyButtonText: {
+    color: theme.text,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Enhanced User ID Styles (PERFECT - Keep as is)
+  userIdHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  userIdModeSelector: {
+    flexDirection: 'row',
+    backgroundColor: theme.surfaceLight,
+    borderRadius: 8,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  userIdModeOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  userIdModeOptionActive: {
     backgroundColor: theme.primary,
   },
   userIdModeText: {
-    color: 'white',
     fontSize: 12,
     fontWeight: '600',
+    color: theme.textSecondary,
+  },
+  userIdModeTextActive: {
+    color: theme.text,
+  },
+  userIdInputContainer: {
+    marginBottom: 4,
+  },
+  userIdInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    height: 52,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 12,
+    backgroundColor: theme.surfaceLight,
+    paddingHorizontal: 16,
+  },
+  userIdInputDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: theme.borderLight,
+  },
+  userIdInputError: {
+    borderColor: theme.error,
+  },
+  userIdInput: {
+    flex: 1,
+    color: theme.text,
+    fontSize: 16,
+    fontWeight: '600',
+    paddingVertical: 8,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    letterSpacing: 0.5,
   },
   verifyUserIdButton: {
-    width: 70,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 5,
+    backgroundColor: theme.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 8,
   },
   verifyUserIdText: {
-    color: 'white',
+    color: theme.text,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  errorText: {
+  verifiedIndicator: {
+    marginLeft: 8,
+  },
+  userIdStatus: {
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  userIdErrorText: {
     color: theme.error,
     fontSize: 12,
-    marginTop: 4,
-    marginLeft: 10,
+    fontWeight: '500',
   },
-  helperText: {
-    color: theme.textSecondary,
+  userIdSuccessText: {
+    color: theme.success,
     fontSize: 12,
-    marginTop: 4,
-    marginLeft: 10,
+    fontWeight: '500',
   },
-  // Verification Button Styles
-  verifyButton: {
-    width: 70,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  unverifiedButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  validButton: {
-    backgroundColor: theme.primary,
-  },
-  verifiedButton: {
-    backgroundColor: theme.success,
-  },
-  verifyButtonText: {
-    color: 'white',
+  userIdHelperText: {
+    color: theme.textTertiary,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
   datePickerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    height: 50,
+    height: 52,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.border,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    marginBottom: 15,
-    paddingHorizontal: 15,
+    backgroundColor: theme.surfaceLight,
+    paddingHorizontal: 16,
   },
   datePickerText: {
-    color: '#FFFFFF',
+    flex: 1,
+    color: theme.text,
     fontSize: 16,
     fontWeight: '500',
-    marginLeft: 10,
+    marginLeft: 12,
   },
-  genderLabel: {
-    color: theme.textSecondary,
-    fontSize: 14,
-    marginBottom: 8,
-    marginLeft: 5,
+  calendarIcon: {
+    marginLeft: 8,
   },
   genderContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 20,
+    gap: 10,
   },
   genderOption: {
     flex: 1,
-    height: 40,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: theme.border,
     borderRadius: 10,
-    marginHorizontal: 5,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: theme.surfaceLight,
   },
   selectedGender: {
     backgroundColor: theme.primary,
@@ -1261,93 +1463,104 @@ const styles = StyleSheet.create({
   genderText: {
     color: theme.textSecondary,
     fontSize: 14,
+    fontWeight: '600',
   },
   selectedGenderText: {
-    color: 'white',
-    fontWeight: '500',
+    color: theme.text,
+    fontWeight: '700',
   },
-  button: {
+  submitButton: {
     width: '100%',
-    height: 50,
-    borderRadius: 12,
+    height: 56,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 5,
+    marginTop: 10,
+    marginBottom: 16,
     flexDirection: 'row',
-  },
-  registerButton: {
     backgroundColor: theme.primary,
+    shadowColor: theme.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  buttonText: {
+  submitButtonText: {
     color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   buttonIcon: {
     marginLeft: 8,
   },
   cancelButton: {
-    marginTop: 15,
-    padding: 10,
+    padding: 12,
+    alignItems: 'center',
   },
   cancelButtonText: {
     color: theme.textSecondary,
     fontSize: 14,
     textAlign: 'center',
   },
+  cancelButtonLink: {
+    color: theme.primaryLight,
+    fontWeight: '700',
+  },
   modalContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     padding: 20,
   },
   modalContent: {
     width: '90%',
     backgroundColor: theme.surface,
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 16,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
   },
   modalHeader: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: 'white',
     marginBottom: 8,
+    textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 14,
     color: theme.textSecondary,
     textAlign: 'center',
+    lineHeight: 20,
   },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 24,
+    marginBottom: 28,
   },
   otpDigitInput: {
-    width: 40,
-    height: 50,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    width: 44,
+    height: 52,
+    borderWidth: 2,
+    borderColor: theme.border,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: theme.surfaceLight,
     color: '#FFFFFF',
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '700',
     textAlign: 'center',
     marginHorizontal: 4,
     includeFontPadding: false,
@@ -1357,36 +1570,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
+    gap: 12,
   },
   modalButton: {
     flex: 1,
-    height: 45,
-    borderRadius: 10,
+    height: 48,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 5,
   },
   modalButtonPrimary: {
     backgroundColor: theme.primary,
   },
   modalButtonSecondary: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: theme.surfaceLight,
+    borderWidth: 1,
+    borderColor: theme.border,
   },
   modalButtonPrimaryText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   modalButtonSecondaryText: {
     color: theme.textSecondary,
     fontSize: 16,
+    fontWeight: '600',
   },
 });
 
 export default React.memo(RegisterScreen);
-
-
-
 
 // import React, { useEffect, useRef, useState } from 'react';
 // import {
@@ -1413,19 +1626,24 @@ export default React.memo(RegisterScreen);
 // import API_URL from './utiliti/config';
 // import Icon from 'react-native-vector-icons/MaterialIcons';
 
-// // Enhanced theme for professional look
+// // Modern theme with professional colors
 // const theme = {
-//   background: '#121212',
-//   surface: '#1E1E1E',
+//   background: '#0F0F23',
+//   surface: '#1A1A2E',
+//   surfaceLight: '#252547',
 //   text: '#FFFFFF',
 //   textSecondary: 'rgba(255, 255, 255, 0.7)',
+//   textTertiary: 'rgba(255, 255, 255, 0.5)',
 //   primary: '#6366F1',
 //   primaryLight: '#818CF8',
+//   primaryDark: '#4F46E5',
 //   secondary: '#0EA5E9',
 //   accent: '#8B5CF6',
 //   success: '#10B981',
 //   error: '#EF4444',
 //   warning: '#F59E0B',
+//   border: 'rgba(255, 255, 255, 0.1)',
+//   borderLight: 'rgba(255, 255, 255, 0.05)',
 // };
 
 // const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
@@ -1447,6 +1665,14 @@ export default React.memo(RegisterScreen);
 //   const [showDatePicker, setShowDatePicker] = useState(false);
 //   const [loading, setLoading] = useState(false);
   
+//   // Enhanced User ID state
+//   const [userId, setUserId] = useState('');
+//   const [userIdMode, setUserIdMode] = useState<'auto' | 'custom'>('auto');
+//   const [userIdVerified, setUserIdVerified] = useState(false);
+//   const [checkingUserId, setCheckingUserId] = useState(false);
+//   const [userIdError, setUserIdError] = useState('');
+//   const [userIdTouched, setUserIdTouched] = useState(false);
+  
 //   // Verification states
 //   const [phoneVerified, setPhoneVerified] = useState(false);
 //   const [emailVerified, setEmailVerified] = useState(false);
@@ -1459,15 +1685,6 @@ export default React.memo(RegisterScreen);
 //   const [phoneConfirmation, setPhoneConfirmation] = useState<any>(null);
 //   const [emailOTPGenerated, setEmailOTPGenerated] = useState('');
 //   const [sendingOTP, setSendingOTP] = useState({ phone: false, email: false });
-  
-
-
-//   const [userId, setUserId] = useState('');
-// const [userIdMode, setUserIdMode] = useState<'auto' | 'custom'>('auto');
-// const [userIdVerified, setUserIdVerified] = useState(false);
-// const [checkingUserId, setCheckingUserId] = useState(false);
-// const [userIdError, setUserIdError] = useState('');
-
 
 //   // Alert state
 //   const [alertVisible, setAlertVisible] = useState(false);
@@ -1504,86 +1721,111 @@ export default React.memo(RegisterScreen);
 //     };
 //   }, []);
 
+//   // Auto-generate user ID on mount
+//   useEffect(() => {
+//     if (userIdMode === 'auto') {
+//       handleGenerateUserId();
+//     }
+//   }, [userIdMode]);
 
-
-
+//   // Enhanced User ID functions
 //   const handleGenerateUserId = async () => {
-//   try {
-//     setCheckingUserId(true);
-//     const response = await fetch(`${API_URL}/api/auth/generate-user-id`, {
-//       method: 'GET',
-//       headers: {
-//         'Content-Type': 'application/json',
-//       },
-//     });
-    
-//     const data = await response.json();
-//     if (response.ok && data.success) {
-//       setUserId(data.userId);
-//       setUserIdVerified(true);
+//     try {
+//       setCheckingUserId(true);
 //       setUserIdError('');
-//     } else {
-//       throw new Error(data.message || 'Failed to generate User ID');
-//     }
-//   } catch (error: any) {
-//     console.error('Generate user ID error:', error);
-//     showQuickAlert('Failed to generate User ID. Please try again.', 'error');
-//   } finally {
-//     setCheckingUserId(false);
-//   }
-// };
-
-// // Add this function to verify custom user ID
-// const handleVerifyUserId = async () => {
-//   if (!userId) {
-//     setUserIdError('Please enter a User ID');
-//     return;
-//   }
-  
-//   try {
-//     setCheckingUserId(true);
-//     const response = await fetch(`${API_URL}/api/auth/check-user-id`, {
-//       method: 'POST',
-//       headers: {
-//         'Content-Type': 'application/json',
-//       },
-//       body: JSON.stringify({ userId }),
-//     });
-    
-//     const data = await response.json();
-//     if (response.ok && data.success) {
-//       setUserIdVerified(true);
-//       setUserIdError('');
-//       showQuickAlert('User ID is available!', 'success');
-//     } else {
+//       const response = await fetch(`${API_URL}/api/auth/generate-user-id`, {
+//         method: 'GET',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//       });
+      
+//       const data = await response.json();
+//       if (response.ok && data.success) {
+//         setUserId(data.userId);
+//         setUserIdVerified(true);
+//         setUserIdError('');
+//         showQuickAlert('Auto-generated User ID created!', 'success');
+//       } else {
+//         throw new Error(data.message || 'Failed to generate User ID');
+//       }
+//     } catch (error: any) {
+//       console.error('Generate user ID error:', error);
+//       showQuickAlert('Failed to generate User ID. Please try again.', 'error');
 //       setUserIdVerified(false);
-//       setUserIdError(data.message || 'User ID verification failed');
-//       showQuickAlert(data.message || 'User ID verification failed', 'error');
+//     } finally {
+//       setCheckingUserId(false);
 //     }
-//   } catch (error: any) {
-//     console.error('Verify user ID error:', error);
+//   };
+
+//   const handleVerifyUserId = async () => {
+//     if (!userId) {
+//       setUserIdError('Please enter a User ID');
+//       return;
+//     }
+    
+//     try {
+//       setCheckingUserId(true);
+//       setUserIdError('');
+//       const response = await fetch(`${API_URL}/api/auth/check-user-id`, {
+//         method: 'POST',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//         body: JSON.stringify({ userId }),
+//       });
+      
+//       const data = await response.json();
+//       if (response.ok && data.success) {
+//         setUserIdVerified(true);
+//         setUserIdError('');
+//         showQuickAlert('User ID is available!', 'success');
+//       } else {
+//         setUserIdVerified(false);
+//         setUserIdError(data.message || 'User ID verification failed');
+//         showQuickAlert(data.message || 'User ID verification failed', 'error');
+//       }
+//     } catch (error: any) {
+//       console.error('Verify user ID error:', error);
+//       setUserIdVerified(false);
+//       setUserIdError('Failed to verify User ID');
+//       showQuickAlert('Failed to verify User ID. Please try again.', 'error');
+//     } finally {
+//       setCheckingUserId(false);
+//     }
+//   };
+
+//   const handleUserIdModeChange = (mode: 'auto' | 'custom') => {
+//     setUserIdMode(mode);
 //     setUserIdVerified(false);
-//     setUserIdError('Failed to verify User ID');
-//     showQuickAlert('Failed to verify User ID. Please try again.', 'error');
-//   } finally {
-//     setCheckingUserId(false);
-//   }
-// };
+//     setUserIdError('');
+//     setUserIdTouched(false);
+    
+//     if (mode === 'auto') {
+//       handleGenerateUserId();
+//     } else {
+//       setUserId('');
+//     }
+//   };
 
-// // Add this function to handle user ID mode change
-// const handleUserIdModeChange = (mode: 'auto' | 'custom') => {
-//   setUserIdMode(mode);
-//   setUserIdVerified(false);
-//   setUserIdError('');
-  
-//   if (mode === 'auto') {
-//     handleGenerateUserId();
-//   } else {
-//     setUserId('');
-//   }
-// };
+//   const validateUserId = (text: string) => {
+//     if (text.length < 6) return 'Must be at least 6 characters';
+//     if (!/\d/.test(text)) return 'Must contain at least one number';
+//     if (!/^[a-zA-Z0-9]+$/.test(text)) return 'No special characters allowed';
+//     return null;
+//   };
 
-
+//   const handleUserIdChange = (text: string) => {
+//     const cleanedText = text.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+//     setUserId(cleanedText);
+//     setUserIdTouched(true);
+    
+//     if (userIdMode === 'custom') {
+//       setUserIdVerified(false);
+//       const validationError = validateUserId(cleanedText);
+//       setUserIdError(validationError || '');
+//     }
+//   };
 
 //   // Toast alert animation (slide from top)
 //   const showQuickAlert = (message: string, type: string = 'error') => {
@@ -1661,7 +1903,6 @@ export default React.memo(RegisterScreen);
 //     showQuickAlert('Sending OTP to phone...', 'success');
 //     try {
 //       setSendingOTP({ ...sendingOTP, phone: true });
-//       // Set flag to indicate we're in registration process
 //       await AsyncStorage.setItem('isRegistering', 'true');
 //       const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
 //       setPhoneConfirmation(confirmation);
@@ -1669,7 +1910,6 @@ export default React.memo(RegisterScreen);
 //     } catch (error: any) {
 //       console.error('Phone OTP error:', error.code, error.message);
 //       showQuickAlert('Failed to send OTP. Please try again.', 'error');
-//       // Clear flag on error
 //       await AsyncStorage.removeItem('isRegistering');
 //     } finally {
 //       setSendingOTP({ ...sendingOTP, phone: false });
@@ -1683,14 +1923,12 @@ export default React.memo(RegisterScreen);
 //     if (text && index < 5) {
 //       phoneOTPFRefs.current[index + 1]?.focus();
 //     }
-//     // Auto-verify when 6 digits are entered
 //     if (index === 5 && text) {
 //       const otp = newOTP.join('');
 //       if (otp.length === 6) {
 //         try {
 //           setLoading(true);
 //           await phoneConfirmation.confirm(otp);
-//           // Immediately sign out to prevent automatic navigation
 //           await auth().signOut();
 //           setPhoneVerified(true);
 //           setShowPhoneOTPModal(false);
@@ -1699,7 +1937,7 @@ export default React.memo(RegisterScreen);
 //         } catch (error: any) {
 //           console.error('Phone OTP verification error:', error.code, error.message);
 //           showQuickAlert('Invalid OTP', 'error');
-//           setPhoneOTP(['', '', '', '', '', '']); // Reset OTP on failure
+//           setPhoneOTP(['', '', '', '', '', '']);
 //         } finally {
 //           setLoading(false);
 //         }
@@ -1727,7 +1965,6 @@ export default React.memo(RegisterScreen);
 //     try {
 //       setLoading(true);
 //       await phoneConfirmation.confirm(otp);
-//       // Immediately sign out to prevent automatic navigation
 //       await auth().signOut();
 //       setPhoneVerified(true);
 //       setShowPhoneOTPModal(false);
@@ -1742,7 +1979,6 @@ export default React.memo(RegisterScreen);
 //     }
 //   };
 
-//   // Email verification functions
 //   const handleSendEmailOTP = async () => {
 //     if (!email) {
 //       showQuickAlert('Please enter an email address', 'error');
@@ -1752,32 +1988,50 @@ export default React.memo(RegisterScreen);
 //       showQuickAlert('Please enter a valid email address', 'error');
 //       return;
 //     }
+
 //     triggerButtonHighlight();
-//     showQuickAlert('Sending OTP to email...', 'success');
-//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-//     setEmailOTPGenerated(otp);
+    
 //     try {
 //       setSendingOTP({ ...sendingOTP, email: true });
-//       const response = await fetch(`${API_URL}/api/auth/send-otp-email`, {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify({
-//           email,
-//           name: name || 'User',
-//           otp,
-//         }),
-//       });
-//       const data = await response.json();
-//       if (response.ok) {
+      
+//       // Generate OTP
+//       const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//       setEmailOTPGenerated(otp);
+      
+//       console.log('Generated OTP:', otp);
+      
+//       // Try to send via backend first
+//       try {
+//         const response = await fetch(`${API_URL}/api/auth/send-otp-email`, {
+//           method: 'POST',
+//           headers: {
+//             'Content-Type': 'application/json',
+//           },
+//           body: JSON.stringify({
+//             email,
+//             name: name || 'User',
+//             otp,
+//           }),
+//         });
+        
+//         const data = await response.json();
+        
+//         if (response.ok) {
+//           setShowEmailOTPModal(true);
+//           showQuickAlert('OTP sent to your email!', 'success');
+//         } else {
+//           setShowEmailOTPModal(true);
+//           showQuickAlert(`Backend email service unavailable. Use OTP: ${otp}`, 'warning');
+//         }
+//       } catch (backendError) {
+//         console.log('Backend email service failed, showing OTP directly:', otp);
 //         setShowEmailOTPModal(true);
-//       } else {
-//         showQuickAlert(data.message || 'Failed to send OTP', 'error');
+//         showQuickAlert(`Email service temporary unavailable. Use OTP: ${otp}`, 'warning');
 //       }
+      
 //     } catch (error: any) {
 //       console.error('Email OTP error:', error);
-//       showQuickAlert('Failed to send OTP. Please check your connection', 'error');
+//       showQuickAlert('Failed to process OTP request. Please try again.', 'error');
 //     } finally {
 //       setSendingOTP({ ...sendingOTP, email: false });
 //     }
@@ -1790,7 +2044,6 @@ export default React.memo(RegisterScreen);
 //     if (text && index < 5) {
 //       emailOTPFRefs.current[index + 1]?.focus();
 //     }
-//     // Auto-verify when 6 digits are entered
 //     if (index === 5 && text) {
 //       const otp = newOTP.join('');
 //       if (otp.length === 6) {
@@ -1845,22 +2098,11 @@ export default React.memo(RegisterScreen);
 //     }
 //   };
 
-
-
-//   useEffect(() => {
-//   if (userIdMode === 'auto') {
-//     handleGenerateUserId();
-//   }
-// }, [userIdMode]);
-
-
-
 //   const handleSubmit = async () => {
-//       if (!userId || !userIdVerified) {
-//     showQuickAlert('Please set up your User ID', 'error');
-//     return;
-//   }
-
+//     if (!userId || !userIdVerified) {
+//       showQuickAlert('Please set up your User ID', 'error');
+//       return;
+//     }
 
 //     if (!name || !phone || !email || !password || !confirmPassword) {
 //       showQuickAlert('Please fill all fields', 'error');
@@ -1892,26 +2134,25 @@ export default React.memo(RegisterScreen);
 //     setLoading(true);
 //     try {
 //       const formattedDateOfBirth = dateOfBirth.toISOString().split('T')[0];
-//   const response = await fetch(`${API_URL}/api/auth/register`, {
-//     method: 'POST',
-//     headers: {
-//       'Content-Type': 'application/json',
-//     },
-//     body: JSON.stringify({
-//       name,
-//       phone,
-//       email,
-//       password,
-//       userId, // Add userId
-//       dateOfBirth: formattedDateOfBirth,
-//       gender,
-//       isPhoneVerified: phoneVerified,
-//       isEmailVerified: emailVerified,
-//     }),
-//   });
+//       const response = await fetch(`${API_URL}/api/auth/register`, {
+//         method: 'POST',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//         body: JSON.stringify({
+//           name,
+//           phone,
+//           email,
+//           password,
+//           userId,
+//           dateOfBirth: formattedDateOfBirth,
+//           gender,
+//           isPhoneVerified: phoneVerified,
+//           isEmailVerified: emailVerified,
+//         }),
+//       });
 //       const data = await response.json();
 //       if (response.ok) {
-//         // Clear registration flag and navigate to Main
 //         await AsyncStorage.removeItem('isRegistering');
 //         showQuickAlert('Registration successful!', 'success');
 //         navigation.reset({
@@ -1943,6 +2184,7 @@ export default React.memo(RegisterScreen);
 //   return (
 //     <SafeAreaView style={styles.container}>
 //       <StatusBar barStyle="light-content" backgroundColor={theme.background} />
+      
 //       {/* Background with gradient circles */}
 //       <View style={styles.background}>
 //         <View style={[styles.gradientCircle, styles.circle1]} />
@@ -1950,26 +2192,27 @@ export default React.memo(RegisterScreen);
 //         <View style={[styles.gradientCircle, styles.circle3]} />
 //         <View style={[styles.gradientCircle, styles.circle4]} />
 //       </View>
+      
 //       {/* Quick Alert */}
-//      {alertVisible && (
-//   <Animated.View
-//     style={[
-//       styles.alertContainer,
-//       {
-//         transform: [{ translateY: alertSlideAnim }],
-//         backgroundColor: alertType === 'success' ? theme.success : theme.error,
-//       },
-//     ]}
-//   >
-//     <Icon
-//       name={alertType === 'success' ? 'check-circle' : 'error'}
-//       size={20}
-//       color="#FFF"
-//       style={styles.alertIcon}
-//     />
-//     <Text style={styles.alertText}>{alertMessage}</Text>
-//   </Animated.View>
-// )}
+//       {alertVisible && (
+//         <Animated.View
+//           style={[
+//             styles.alertContainer,
+//             {
+//               transform: [{ translateY: alertSlideAnim }],
+//               backgroundColor: alertType === 'success' ? theme.success : theme.error,
+//             },
+//           ]}
+//         >
+//           <Icon
+//             name={alertType === 'success' ? 'check-circle' : 'error'}
+//             size={20}
+//             color="#FFF"
+//             style={styles.alertIcon}
+//           />
+//           <Text style={styles.alertText}>{alertMessage}</Text>
+//         </Animated.View>
+//       )}
 
 //       {/* Content */}
 //       <KeyboardAvoidingView
@@ -1990,6 +2233,7 @@ export default React.memo(RegisterScreen);
 //           <Text style={styles.appName}>Reals TO Chat</Text>
 //           <Text style={styles.tagline}>Create. Connect. Chat.</Text>
 //         </Animated.View>
+        
 //         {/* Registration Form */}
 //         <Animated.View style={[styles.formContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
 //           <ScrollView
@@ -1998,238 +2242,280 @@ export default React.memo(RegisterScreen);
 //             keyboardShouldPersistTaps="handled"
 //           >
 //             <Text style={styles.sectionTitle}>Create Account</Text>
-//             <View style={styles.inputContainer}>
-//               <Icon name="person" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <TextInput
-//                 style={styles.input}
-//                 placeholder="Full Name"
-//                 placeholderTextColor={theme.textSecondary}
-//                 value={name}
-//                 onChangeText={setName}
-//                 autoCapitalize="words"
-//                 autoCorrect={false}
-//                 spellCheck={false}
-//                 autoComplete="off"
-//                 importantForAutofill="no"
-//                 textContentType="none"
-//               />
-//             </View>
-//             <View style={styles.inputContainer}>
-//               <Icon name="phone" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <View style={styles.phoneInputWrapper}>
-//                 <Text style={styles.countryCode}>+91</Text>
+            
+//             {/* Name Field */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Full Name</Text>
+//               <View style={styles.inputContainer}>
+//                 <Icon name="person" size={20} color={theme.textSecondary} style={styles.inputIcon} />
 //                 <TextInput
-//                   style={styles.phoneInput}
-//                   placeholder="Phone Number"
-//                   placeholderTextColor={theme.textSecondary}
-//                   keyboardType="phone-pad"
-//                   value={phone}
-//                   onChangeText={setPhone}
-//                   maxLength={10}
+//                   style={styles.input}
+//                   placeholder="Enter your full name"
+//                   placeholderTextColor={theme.textTertiary}
+//                   value={name}
+//                   onChangeText={setName}
+//                   autoCapitalize="words"
 //                   autoCorrect={false}
-//                   spellCheck={false}
-//                   autoComplete="off"
-//                   importantForAutofill="no"
-//                   textContentType="none"
 //                 />
 //               </View>
-//               <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
-//                 <TouchableOpacity
-//                   style={[
-//                     styles.verifyButton,
-//                     phoneVerified ? styles.verifiedButton : isPhoneValid ? styles.validButton : styles.unverifiedButton,
-//                     (sendingOTP.phone || loading) && styles.disabledButton,
-//                   ]}
-//                   onPress={handleSendPhoneOTP}
-//                   disabled={phoneVerified || sendingOTP.phone || loading || !isPhoneValid}
-//                 >
-//                   {sendingOTP.phone ? (
-//                     <ActivityIndicator size="small" color="#FFF" />
-//                   ) : phoneVerified ? (
-//                     <Icon name="check-circle" size={20} color="#FFF" />
-//                   ) : (
-//                     <Text style={styles.verifyButtonText}>Verify</Text>
+//             </View>
+
+//             {/* Phone Field - COMPACT DESIGN */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Mobile Number</Text>
+//               <View style={styles.compactInputContainer}>
+//                 <View style={styles.phoneInputContent}>
+//                   <Icon name="phone" size={18} color={theme.textSecondary} style={styles.compactInputIcon} />
+//                   <View style={styles.compactPhoneInputWrapper}>
+//                     <Text style={styles.compactCountryCode}>+91</Text>
+//                     <TextInput
+//                       style={styles.compactPhoneInput}
+//                       placeholder="Enter your phone number"
+//                       placeholderTextColor={theme.textTertiary}
+//                       keyboardType="phone-pad"
+//                       value={phone}
+//                       onChangeText={setPhone}
+//                       maxLength={10}
+//                     />
+//                   </View>
+//                 </View>
+//                 <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
+//                   <TouchableOpacity
+//                     style={[
+//                       styles.compactVerifyButton,
+//                       phoneVerified ? styles.compactVerifiedButton : isPhoneValid ? styles.compactValidButton : styles.compactUnverifiedButton,
+//                       (sendingOTP.phone || loading) && styles.disabledButton,
+//                     ]}
+//                     onPress={handleSendPhoneOTP}
+//                     disabled={phoneVerified || sendingOTP.phone || loading || !isPhoneValid}
+//                   >
+//                     {sendingOTP.phone ? (
+//                       <ActivityIndicator size="small" color="#FFF" />
+//                     ) : phoneVerified ? (
+//                       <Icon name="check-circle" size={14} color="#FFF" />
+//                     ) : (
+//                       <Text style={styles.compactVerifyButtonText}>Verify</Text>
+//                     )}
+//                   </TouchableOpacity>
+//                 </Animated.View>
+//               </View>
+//             </View>
+
+//             {/* Email Field - COMPACT DESIGN */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Email Address</Text>
+//               <View style={styles.compactInputContainer}>
+//                 <View style={styles.emailInputContent}>
+//                   <Icon name="email" size={18} color={theme.textSecondary} style={styles.compactInputIcon} />
+//                   <TextInput
+//                     style={styles.compactEmailInput}
+//                     placeholder="Enter your email address"
+//                     placeholderTextColor={theme.textTertiary}
+//                     keyboardType="email-address"
+//                     value={email}
+//                     onChangeText={setEmail}
+//                     autoCapitalize="none"
+//                   />
+//                 </View>
+//                 <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
+//                   <TouchableOpacity
+//                     style={[
+//                       styles.compactVerifyButton,
+//                       emailVerified ? styles.compactVerifiedButton : isEmailValid ? styles.compactValidButton : styles.compactUnverifiedButton,
+//                       (sendingOTP.email || loading) && styles.disabledButton,
+//                     ]}
+//                     onPress={handleSendEmailOTP}
+//                     disabled={emailVerified || sendingOTP.email || loading || !isEmailValid}
+//                   >
+//                     {sendingOTP.email ? (
+//                       <ActivityIndicator size="small" color="#FFF" />
+//                     ) : emailVerified ? (
+//                       <Icon name="check-circle" size={14} color="#FFF" />
+//                     ) : (
+//                       <Text style={styles.compactVerifyButtonText}>Verify</Text>
+//                     )}
+//                   </TouchableOpacity>
+//                 </Animated.View>
+//               </View>
+//             </View>
+
+//             {/* Enhanced User ID Field - PERFECT DESIGN (Keep as is) */}
+//             <View style={styles.inputGroup}>
+//               <View style={styles.userIdHeader}>
+//                 <Text style={styles.inputLabel}>User ID</Text>
+//                 <View style={styles.userIdModeSelector}>
+//                   <TouchableOpacity
+//                     style={[
+//                       styles.userIdModeOption,
+//                       userIdMode === 'auto' && styles.userIdModeOptionActive,
+//                     ]}
+//                     onPress={() => handleUserIdModeChange('auto')}
+//                   >
+//                     <Text style={[
+//                       styles.userIdModeText,
+//                       userIdMode === 'auto' && styles.userIdModeTextActive
+//                     ]}>
+//                       Auto-generate
+//                     </Text>
+//                   </TouchableOpacity>
+//                   <TouchableOpacity
+//                     style={[
+//                       styles.userIdModeOption,
+//                       userIdMode === 'custom' && styles.userIdModeOptionActive,
+//                     ]}
+//                     onPress={() => handleUserIdModeChange('custom')}
+//                   >
+//                     <Text style={[
+//                       styles.userIdModeText,
+//                       userIdMode === 'custom' && styles.userIdModeTextActive
+//                     ]}>
+//                       Custom
+//                     </Text>
+//                   </TouchableOpacity>
+//                 </View>
+//               </View>
+              
+//               <View style={styles.userIdInputContainer}>
+//                 <View style={[
+//                   styles.userIdInputWrapper,
+//                   userIdMode === 'auto' && styles.userIdInputDisabled,
+//                   userIdError && styles.userIdInputError
+//                 ]}>
+//                   <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+//                   <TextInput
+//                     style={styles.userIdInput}
+//                     placeholder={userIdMode === 'auto' ? 'Auto-generating...' : 'Enter your User ID'}
+//                     placeholderTextColor={theme.textTertiary}
+//                     value={userId}
+//                     onChangeText={handleUserIdChange}
+//                     editable={userIdMode === 'custom'}
+//                     autoCapitalize="characters"
+//                     maxLength={20}
+//                   />
+                  
+//                   {userIdMode === 'custom' && userId && !userIdVerified && (
+//                     <TouchableOpacity
+//                       style={[
+//                         styles.verifyUserIdButton,
+//                         (checkingUserId || loading || !!userIdError) && styles.disabledButton,
+//                       ]}
+//                       onPress={handleVerifyUserId}
+//                       disabled={checkingUserId || loading || !!userIdError}
+//                     >
+//                       {checkingUserId ? (
+//                         <ActivityIndicator size="small" color="#FFF" />
+//                       ) : (
+//                         <Text style={styles.verifyUserIdText}>Verify</Text>
+//                       )}
+//                     </TouchableOpacity>
 //                   )}
-//                 </TouchableOpacity>
-//               </Animated.View>
-//             </View>
-//             <View style={styles.inputContainer}>
-//               <Icon name="email" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <TextInput
-//                 style={styles.emailInput}
-//                 placeholder="Email Address"
-//                 placeholderTextColor={theme.textSecondary}
-//                 keyboardType="email-address"
-//                 value={email}
-//                 onChangeText={setEmail}
-//                 autoCapitalize="none"
-//                 autoCorrect={false}
-//                 spellCheck={false}
-//                 autoComplete="off"
-//                 importantForAutofill="no"
-//                 textContentType="none"
-//               />
-//               <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
-//                 <TouchableOpacity
-//                   style={[
-//                     styles.verifyButton,
-//                     emailVerified ? styles.verifiedButton : isEmailValid ? styles.validButton : styles.unverifiedButton,
-//                     (sendingOTP.email || loading) && styles.disabledButton,
-//                   ]}
-//                   onPress={handleSendEmailOTP}
-//                   disabled={emailVerified || sendingOTP.email || loading || !isEmailValid}
-//                 >
-//                   {sendingOTP.email ? (
-//                     <ActivityIndicator size="small" color="#FFF" />
-//                   ) : emailVerified ? (
-//                     <Icon name="check-circle" size={20} color="#FFF" />
-//                   ) : (
-//                     <Text style={styles.verifyButtonText}>Verify</Text>
+                  
+//                   {userIdVerified && (
+//                     <View style={styles.verifiedIndicator}>
+//                       <Icon name="check-circle" size={20} color={theme.success} />
+//                     </View>
 //                   )}
-//                 </TouchableOpacity>
-//               </Animated.View>
+//                 </View>
+                
+//                 {/* User ID Status */}
+//                 <View style={styles.userIdStatus}>
+//                   {userIdError ? (
+//                     <Text style={styles.userIdErrorText}>{userIdError}</Text>
+//                   ) : userIdVerified ? (
+//                     <Text style={styles.userIdSuccessText}>User ID is available and valid</Text>
+//                   ) : userIdMode === 'auto' ? (
+//                     <Text style={styles.userIdHelperText}>We'll automatically create a unique ID for you</Text>
+//                   ) : (
+//                     <Text style={styles.userIdHelperText}>
+//                       Must be 6+ characters, include a number, no special characters
+//                     </Text>
+//                   )}
+//                 </View>
+//               </View>
 //             </View>
 
-
-
-
-         
-
-// {/* User ID Field */}
-// <View style={styles.inputContainer}>
-//   <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//   <View style={styles.userIdContainer}>
-//     <TextInput
-//       style={[styles.userIdInput, !userIdVerified && userIdMode === 'custom' && styles.unverifiedInput]}
-//       placeholder="User ID"
-//       placeholderTextColor={theme.textSecondary}
-//       value={userId}
-//       onChangeText={(text) => {
-//         setUserId(text);
-//         if (userIdMode === 'custom') {
-//           setUserIdVerified(false);
-//         }
-//         setUserIdError('');
-//       }}
-//       editable={userIdMode === 'custom'}
-//       autoCapitalize="characters"
-//       autoCorrect={false}
-//       spellCheck={false}
-//       autoComplete="off"
-//       importantForAutofill="no"
-//       textContentType="none"
-//     />
-//     <View style={styles.userIdControls}>
-//       <TouchableOpacity
-//         style={[styles.userIdModeButton, userIdMode === 'auto' && styles.activeUserIdMode]}
-//         onPress={() => handleUserIdModeChange('auto')}
-//       >
-//         <Text style={styles.userIdModeText}>A</Text>
-//       </TouchableOpacity>
-//       <TouchableOpacity
-//         style={[styles.userIdModeButton, userIdMode === 'custom' && styles.activeUserIdMode]}
-//         onPress={() => handleUserIdModeChange('custom')}
-//       >
-//         <Text style={styles.userIdModeText}>C</Text>
-//       </TouchableOpacity>
-//       {userIdMode === 'custom' && (
-//         <TouchableOpacity
-//           style={[
-//             styles.verifyUserIdButton,
-//             userIdVerified ? styles.verifiedButton : styles.unverifiedButton,
-//             (checkingUserId || loading) && styles.disabledButton,
-//           ]}
-//           onPress={handleVerifyUserId}
-//           disabled={checkingUserId || loading || !userId}
-//         >
-//           {checkingUserId ? (
-//             <ActivityIndicator size="small" color="#FFF" />
-//           ) : userIdVerified ? (
-//             <Icon name="check-circle" size={16} color="#FFF" />
-//           ) : (
-//             <Text style={styles.verifyUserIdText}>Verify</Text>
-//           )}
-//         </TouchableOpacity>
-//       )}
-//     </View>
-//   </View>
-// </View>
-// {userIdError ? (
-//   <Text style={styles.errorText}>{userIdError}</Text>
-// ) : (
-//   <Text style={styles.helperText}>
-//     {userIdMode === 'auto' 
-//       ? 'Auto-generated User ID' 
-//       : 'Must be 6+ characters, include a number, no special characters'
-//     }
-//   </Text>
-// )}
-
-
-
-//             <View style={styles.inputContainer}>
-//               <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <TextInput
-//                 style={styles.input}
-//                 placeholder="Password"
-//                 placeholderTextColor={theme.textSecondary}
-//                 secureTextEntry
-//                 value={password}
-//                 onChangeText={setPassword}
-//                 autoCapitalize="none"
-//                 autoCorrect={false}
-//                 spellCheck={false}
-//                 autoComplete="off"
-//                 importantForAutofill="no"
-//                 textContentType="none"
-//               />
+//             {/* Password Fields */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Password</Text>
+//               <View style={styles.inputContainer}>
+//                 <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+//                 <TextInput
+//                   style={styles.input}
+//                   placeholder="Create a strong password"
+//                   placeholderTextColor={theme.textTertiary}
+//                   secureTextEntry
+//                   value={password}
+//                   onChangeText={setPassword}
+//                   autoCapitalize="none"
+//                 />
+//               </View>
 //             </View>
-//             <View style={styles.inputContainer}>
-//               <Icon name="lock-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <TextInput
-//                 style={styles.input}
-//                 placeholder="Confirm Password"
-//                 placeholderTextColor={theme.textSecondary}
-//                 secureTextEntry
-//                 value={confirmPassword}
-//                 onChangeText={setConfirmPassword}
-//                 autoCapitalize="none"
-//                 autoCorrect={false}
-//                 spellCheck={false}
-//                 autoComplete="off"
-//                 importantForAutofill="no"
-//                 textContentType="none"
-//               />
+
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Confirm Password</Text>
+//               <View style={styles.inputContainer}>
+//                 <Icon name="lock-outline" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+//                 <TextInput
+//                   style={styles.input}
+//                   placeholder="Confirm your password"
+//                   placeholderTextColor={theme.textTertiary}
+//                   secureTextEntry
+//                   value={confirmPassword}
+//                   onChangeText={setConfirmPassword}
+//                   autoCapitalize="none"
+//                 />
+//               </View>
 //             </View>
-//             <TouchableOpacity style={styles.datePickerContainer} onPress={() => setShowDatePicker(true)}>
-//               <Icon name="event" size={20} color={theme.textSecondary} style={styles.inputIcon} />
-//               <Text style={styles.datePickerText}>{formatDate(dateOfBirth)}</Text>
-//             </TouchableOpacity>
-//             {showDatePicker && (
-//               <DateTimePicker
-//                 value={dateOfBirth}
-//                 mode="date"
-//                 display="default"
-//                 onChange={handleDateChange}
-//                 maximumDate={new Date()}
-//               />
-//             )}
-//             <Text style={styles.genderLabel}>Gender</Text>
-//             <View style={styles.genderContainer}>
-//               {['male', 'female', 'other'].map((option) => (
-//                 <TouchableOpacity
-//                   key={option}
-//                   style={[styles.genderOption, gender === option && styles.selectedGender]}
-//                   onPress={() => setGender(option)}
-//                 >
-//                   <Text style={[styles.genderText, gender === option && styles.selectedGenderText]}>
-//                     {option.charAt(0).toUpperCase() + option.slice(1)}
-//                   </Text>
-//                 </TouchableOpacity>
-//               ))}
+
+//             {/* Date of Birth */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Date of Birth</Text>
+//               <TouchableOpacity 
+//                 style={styles.datePickerContainer} 
+//                 onPress={() => setShowDatePicker(true)}
+//               >
+//                 <Icon name="event" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+//                 <Text style={styles.datePickerText}>{formatDate(dateOfBirth)}</Text>
+//                 <Icon name="calendar-today" size={18} color={theme.textTertiary} style={styles.calendarIcon} />
+//               </TouchableOpacity>
+//               {showDatePicker && (
+//                 <DateTimePicker
+//                   value={dateOfBirth}
+//                   mode="date"
+//                   display="default"
+//                   onChange={handleDateChange}
+//                   maximumDate={new Date()}
+//                 />
+//               )}
 //             </View>
+
+//             {/* Gender */}
+//             <View style={styles.inputGroup}>
+//               <Text style={styles.inputLabel}>Gender</Text>
+//               <View style={styles.genderContainer}>
+//                 {['male', 'female', 'other'].map((option) => (
+//                   <TouchableOpacity
+//                     key={option}
+//                     style={[
+//                       styles.genderOption,
+//                       gender === option && styles.selectedGender,
+//                     ]}
+//                     onPress={() => setGender(option)}
+//                   >
+//                     <Text style={[
+//                       styles.genderText,
+//                       gender === option && styles.selectedGenderText
+//                     ]}>
+//                       {option.charAt(0).toUpperCase() + option.slice(1)}
+//                     </Text>
+//                   </TouchableOpacity>
+//                 ))}
+//               </View>
+//             </View>
+
+//             {/* Submit Button */}
 //             <TouchableOpacity
-//               style={[styles.button, styles.registerButton, loading && styles.disabledButton]}
+//               style={[styles.submitButton, loading && styles.disabledButton]}
 //               onPress={handleSubmit}
 //               disabled={loading}
 //             >
@@ -2237,17 +2523,26 @@ export default React.memo(RegisterScreen);
 //                 <ActivityIndicator size="small" color="#FFFFFF" />
 //               ) : (
 //                 <>
-//                   <Text style={styles.buttonText}>Create Account</Text>
+//                   <Text style={styles.submitButtonText}>Create Account</Text>
 //                   <Icon name="arrow-forward" size={20} color="#FFF" style={styles.buttonIcon} />
 //                 </>
 //               )}
 //             </TouchableOpacity>
-//             <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()} disabled={loading}>
-//               <Text style={styles.cancelButtonText}>Already have an account? Sign In</Text>
+            
+//             {/* Login Link */}
+//             <TouchableOpacity 
+//               style={styles.cancelButton} 
+//               onPress={() => navigation.goBack()} 
+//               disabled={loading}
+//             >
+//               <Text style={styles.cancelButtonText}>
+//                 Already have an account? <Text style={styles.cancelButtonLink}>Sign In</Text>
+//               </Text>
 //             </TouchableOpacity>
 //           </ScrollView>
 //         </Animated.View>
 //       </KeyboardAvoidingView>
+
 //       {/* Phone OTP Modal */}
 //       <Modal
 //         visible={showPhoneOTPModal}
@@ -2259,7 +2554,9 @@ export default React.memo(RegisterScreen);
 //           <View style={styles.modalContent}>
 //             <View style={styles.modalHeader}>
 //               <Text style={styles.modalTitle}>Verify Phone Number</Text>
-//               <Text style={styles.modalSubtitle}>Enter the 6-digit code sent to +91{phone}</Text>
+//               <Text style={styles.modalSubtitle}>
+//                 We've sent a 6-digit code to +91{phone}
+//               </Text>
 //             </View>
 //             <View style={styles.otpContainer}>
 //               {phoneOTP.map((digit, index) => (
@@ -2274,11 +2571,6 @@ export default React.memo(RegisterScreen);
 //                   maxLength={1}
 //                   autoFocus={index === 0}
 //                   textAlign="center"
-//                   autoCorrect={false}
-//                   spellCheck={false}
-//                   autoComplete="off"
-//                   importantForAutofill="no"
-//                   textContentType="none"
 //                 />
 //               ))}
 //             </View>
@@ -2304,6 +2596,7 @@ export default React.memo(RegisterScreen);
 //           </View>
 //         </View>
 //       </Modal>
+
 //       {/* Email OTP Modal */}
 //       <Modal
 //         visible={showEmailOTPModal}
@@ -2315,7 +2608,9 @@ export default React.memo(RegisterScreen);
 //           <View style={styles.modalContent}>
 //             <View style={styles.modalHeader}>
 //               <Text style={styles.modalTitle}>Verify Email Address</Text>
-//               <Text style={styles.modalSubtitle}>Enter the 6-digit code sent to {email}</Text>
+//               <Text style={styles.modalSubtitle}>
+//                 Enter the 6-digit code sent to {email}
+//               </Text>
 //             </View>
 //             <View style={styles.otpContainer}>
 //               {emailOTP.map((digit, index) => (
@@ -2330,11 +2625,6 @@ export default React.memo(RegisterScreen);
 //                   maxLength={1}
 //                   autoFocus={index === 0}
 //                   textAlign="center"
-//                   autoCorrect={false}
-//                   spellCheck={false}
-//                   autoComplete="off"
-//                   importantForAutofill="no"
-//                   textContentType="none"
 //                 />
 //               ))}
 //             </View>
@@ -2365,74 +2655,6 @@ export default React.memo(RegisterScreen);
 // };
 
 // const styles = StyleSheet.create({
-
-//   userIdContainer: {
-//   flex: 1,
-//   flexDirection: 'row',
-//   alignItems: 'center',
-// },
-// userIdInput: {
-//   flex: 1,
-//   color: '#FFFFFF',
-//   fontSize: 16,
-//   fontWeight: '500',
-//   paddingVertical: 8,
-//   includeFontPadding: false,
-//   textAlignVertical: 'center',
-// },
-// unverifiedInput: {
-//   borderRightWidth: 2,
-//   borderRightColor: theme.warning,
-// },
-// userIdControls: {
-//   flexDirection: 'row',
-//   alignItems: 'center',
-//   marginLeft: 10,
-// },
-// userIdModeButton: {
-//   width: 30,
-//   height: 30,
-//   borderRadius: 15,
-//   backgroundColor: 'rgba(255, 255, 255, 0.1)',
-//   justifyContent: 'center',
-//   alignItems: 'center',
-//   marginHorizontal: 2,
-// },
-// activeUserIdMode: {
-//   backgroundColor: theme.primary,
-// },
-// userIdModeText: {
-//   color: 'white',
-//   fontSize: 12,
-//   fontWeight: '600',
-// },
-// verifyUserIdButton: {
-//   width: 70,
-//   height: 30,
-//   borderRadius: 15,
-//   justifyContent: 'center',
-//   alignItems: 'center',
-//   marginLeft: 5,
-// },
-// verifyUserIdText: {
-//   color: 'white',
-//   fontSize: 12,
-//   fontWeight: '600',
-// },
-// errorText: {
-//   color: theme.error,
-//   fontSize: 12,
-//   marginTop: 4,
-//   marginLeft: 10,
-// },
-// helperText: {
-//   color: theme.textSecondary,
-//   fontSize: 12,
-//   marginTop: 4,
-//   marginLeft: 10,
-// },
-
-
 //   container: {
 //     flex: 1,
 //     backgroundColor: theme.background,
@@ -2447,7 +2669,7 @@ export default React.memo(RegisterScreen);
 //   gradientCircle: {
 //     position: 'absolute',
 //     borderRadius: 500,
-//     opacity: 0.3,
+//     opacity: 0.15,
 //   },
 //   circle1: {
 //     width: Dimensions.get('window').width * 1.5,
@@ -2473,7 +2695,7 @@ export default React.memo(RegisterScreen);
 //   circle4: {
 //     width: Dimensions.get('window').width * 0.6,
 //     height: Dimensions.get('window').width * 0.6,
-//     backgroundColor: theme.surface,
+//     backgroundColor: theme.surfaceLight,
 //     top: Dimensions.get('window').height * 0.3,
 //     right: -Dimensions.get('window').width * 0.1,
 //   },
@@ -2482,24 +2704,24 @@ export default React.memo(RegisterScreen);
 //     top: Dimensions.get('window').height * 0.12,
 //     left: 20,
 //     right: 20,
-//     padding: 12,
-//     borderRadius: 8,
+//     padding: 16,
+//     borderRadius: 12,
 //     flexDirection: 'row',
 //     alignItems: 'center',
 //     zIndex: 1000,
 //     shadowColor: '#000',
-//     shadowOffset: { width: 0, height: 2 },
+//     shadowOffset: { width: 0, height: 4 },
 //     shadowOpacity: 0.3,
-//     shadowRadius: 4,
-//     elevation: 5,
+//     shadowRadius: 8,
+//     elevation: 8,
 //   },
 //   alertIcon: {
-//     marginRight: 8,
+//     marginRight: 12,
 //   },
 //   alertText: {
 //     color: '#FFF',
 //     fontSize: 14,
-//     fontWeight: '500',
+//     fontWeight: '600',
 //     flex: 1,
 //   },
 //   content: {
@@ -2510,14 +2732,19 @@ export default React.memo(RegisterScreen);
 //   },
 //   logoContainer: {
 //     alignItems: 'center',
-//     marginTop: Dimensions.get('window').height * 0.03,
-//     marginBottom: 10,
+//     marginTop: Dimensions.get('window').height * 0.02,
+//     marginBottom: 20,
 //   },
 //   logoWrapper: {
-//     backgroundColor: 'rgba(255, 255, 255, 0.1)',
-//     padding: 15,
+//     backgroundColor: 'rgba(255, 255, 255, 0.08)',
+//     padding: 16,
 //     borderRadius: 20,
-//     marginBottom: 10,
+//     marginBottom: 12,
+//     shadowColor: '#000',
+//     shadowOffset: { width: 0, height: 4 },
+//     shadowOpacity: 0.3,
+//     shadowRadius: 8,
+//     elevation: 8,
 //   },
 //   logo: {
 //     width: 60,
@@ -2526,153 +2753,303 @@ export default React.memo(RegisterScreen);
 //   },
 //   appName: {
 //     fontSize: 28,
-//     fontWeight: '700',
+//     fontWeight: '800',
 //     color: 'white',
-//     marginBottom: 5,
-//     letterSpacing: 0.5,
+//     marginBottom: 6,
+//     letterSpacing: 0.8,
+//     textShadowColor: 'rgba(255, 255, 255, 0.3)',
+//     textShadowOffset: { width: 0, height: 0 },
+//     textShadowRadius: 10,
 //   },
 //   tagline: {
 //     fontSize: 14,
 //     color: theme.textSecondary,
-//     letterSpacing: 0.3,
+//     letterSpacing: 0.5,
+//     fontWeight: '500',
 //   },
 //   formContainer: {
 //     width: '90%',
 //     backgroundColor: theme.surface,
 //     borderRadius: 20,
-//     padding: 20,
+//     padding: 24,
 //     marginTop: 10,
-//     maxHeight: '75%',
+//     maxHeight: '80%',
 //     shadowColor: '#000',
-//     shadowOffset: { width: 0, height: 4 },
-//     shadowOpacity: 0.3,
-//     shadowRadius: 4.65,
-//     elevation: 8,
+//     shadowOffset: { width: 0, height: 8 },
+//     shadowOpacity: 0.4,
+//     shadowRadius: 16,
+//     elevation: 16,
+//     borderWidth: 1,
+//     borderColor: theme.borderLight,
 //   },
 //   scrollContent: {
 //     paddingBottom: 10,
 //   },
 //   sectionTitle: {
 //     color: 'white',
-//     fontSize: 22,
-//     marginBottom: 25,
+//     fontSize: 24,
+//     marginBottom: 30,
 //     textAlign: 'center',
+//     fontWeight: '700',
+//     letterSpacing: 0.5,
+//   },
+//   inputGroup: {
+//     marginBottom: 20,
+//   },
+//   inputLabel: {
+//     color: theme.text,
+//     fontSize: 14,
 //     fontWeight: '600',
+//     marginBottom: 8,
+//     marginLeft: 4,
 //   },
 //   inputContainer: {
 //     flexDirection: 'row',
 //     alignItems: 'center',
 //     width: '100%',
-//     height: 50,
+//     height: 52,
 //     borderWidth: 1,
-//     borderColor: 'rgba(255, 255, 255, 0.1)',
+//     borderColor: theme.border,
 //     borderRadius: 12,
-//     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-//     marginBottom: 15,
-//     paddingHorizontal: 10,
+//     backgroundColor: theme.surfaceLight,
+//     paddingHorizontal: 16,
 //   },
 //   inputIcon: {
-//     marginRight: 10,
+//     marginRight: 12,
 //   },
 //   input: {
 //     flex: 1,
-//     color: '#FFFFFF',
+//     color: theme.text,
 //     fontSize: 16,
 //     fontWeight: '500',
 //     paddingVertical: 8,
 //     includeFontPadding: false,
 //     textAlignVertical: 'center',
 //   },
-//   phoneInputWrapper: {
+
+//   // COMPACT INPUT STYLES FOR PHONE AND EMAIL
+//   compactInputContainer: {
 //     flexDirection: 'row',
 //     alignItems: 'center',
-//     flex: 1,
-//   },
-//   countryCode: {
-//     color: '#FFFFFF',
-//     fontSize: 16,
-//     fontWeight: '500',
-//     marginRight: 5,
-//   },
-//   phoneInput: {
-//     flex: 1,
-//     color: '#FFFFFF',
-//     fontSize: 16,
-//     fontWeight: '500',
+//     width: '100%',
+//     height: 48, // Reduced height for compact look
+//     borderWidth: 1,
+//     borderColor: theme.border,
+//     borderRadius: 12,
+//     backgroundColor: theme.surfaceLight,
+//     paddingHorizontal: 14,
 //     paddingVertical: 8,
-//     includeFontPadding: false,
-//     textAlignVertical: 'center',
 //   },
-//   emailInput: {
+//   phoneInputContent: {
 //     flex: 1,
-//     color: '#FFFFFF',
-//     fontSize: 16,
-//     fontWeight: '500',
-//     paddingVertical: 8,
-//     includeFontPadding: false,
-//     textAlignVertical: 'center',
-//   },
-//   verifyButton: {
-//     width: 70,
-//     height: 30,
-//     borderRadius: 15,
-//     justifyContent: 'center',
+//     flexDirection: 'row',
 //     alignItems: 'center',
 //   },
-//   unverifiedButton: {
-//     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+//   emailInputContent: {
+//     flex: 1,
+//     flexDirection: 'row',
+//     alignItems: 'center',
 //   },
-//   validButton: {
+//   compactInputIcon: {
+//     marginRight: 10,
+//     width: 18,
+//   },
+//   compactPhoneInputWrapper: {
+//     flex: 1,
+//     flexDirection: 'row',
+//     alignItems: 'center',
+//   },
+//   compactCountryCode: {
+//     color: theme.text,
+//     fontSize: 14,
+//     fontWeight: '600',
+//     marginRight: 8,
+//     backgroundColor: theme.primaryDark,
+//     paddingHorizontal: 6,
+//     paddingVertical: 2,
+//     borderRadius: 4,
+//   },
+//   compactPhoneInput: {
+//     flex: 1,
+//     color: theme.text,
+//     fontSize: 14, // Slightly smaller font
+//     fontWeight: '500',
+//     paddingVertical: 4,
+//     includeFontPadding: false,
+//     textAlignVertical: 'center',
+//   },
+//   compactEmailInput: {
+//     flex: 1,
+//     color: theme.text,
+//     fontSize: 14, // Slightly smaller font
+//     fontWeight: '500',
+//     paddingVertical: 4,
+//     includeFontPadding: false,
+//     textAlignVertical: 'center',
+//   },
+//   compactVerifyButton: {
+//     paddingHorizontal: 12,
+//     paddingVertical: 6,
+//     borderRadius: 6,
+//     minWidth: 60,
+//     height: 32,
+//     alignItems: 'center',
+//     justifyContent: 'center',
+//     marginLeft: 8,
+//   },
+//   compactUnverifiedButton: {
+//     backgroundColor: theme.surfaceLight,
+//     borderWidth: 1,
+//     borderColor: theme.border,
+//   },
+//   compactValidButton: {
 //     backgroundColor: theme.primary,
 //   },
-//   verifiedButton: {
+//   compactVerifiedButton: {
 //     backgroundColor: theme.success,
 //   },
-//   verifyButtonText: {
-//     color: 'white',
+//   compactVerifyButtonText: {
+//     color: theme.text,
+//     fontSize: 11,
+//     fontWeight: '700',
+//   },
+
+//   // Enhanced User ID Styles (PERFECT - Keep as is)
+//   userIdHeader: {
+//     flexDirection: 'row',
+//     justifyContent: 'space-between',
+//     alignItems: 'center',
+//     marginBottom: 8,
+//   },
+//   userIdModeSelector: {
+//     flexDirection: 'row',
+//     backgroundColor: theme.surfaceLight,
+//     borderRadius: 8,
+//     padding: 2,
+//     borderWidth: 1,
+//     borderColor: theme.border,
+//   },
+//   userIdModeOption: {
+//     paddingHorizontal: 12,
+//     paddingVertical: 6,
+//     borderRadius: 6,
+//   },
+//   userIdModeOptionActive: {
+//     backgroundColor: theme.primary,
+//   },
+//   userIdModeText: {
 //     fontSize: 12,
 //     fontWeight: '600',
+//     color: theme.textSecondary,
+//   },
+//   userIdModeTextActive: {
+//     color: theme.text,
+//   },
+//   userIdInputContainer: {
+//     marginBottom: 4,
+//   },
+//   userIdInputWrapper: {
+//     flexDirection: 'row',
+//     alignItems: 'center',
+//     width: '100%',
+//     height: 52,
+//     borderWidth: 1,
+//     borderColor: theme.border,
+//     borderRadius: 12,
+//     backgroundColor: theme.surfaceLight,
+//     paddingHorizontal: 16,
+//   },
+//   userIdInputDisabled: {
+//     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+//     borderColor: theme.borderLight,
+//   },
+//   userIdInputError: {
+//     borderColor: theme.error,
+//   },
+//   userIdInput: {
+//     flex: 1,
+//     color: theme.text,
+//     fontSize: 16,
+//     fontWeight: '600',
+//     paddingVertical: 8,
+//     includeFontPadding: false,
+//     textAlignVertical: 'center',
+//     letterSpacing: 0.5,
+//   },
+//   verifyUserIdButton: {
+//     backgroundColor: theme.primary,
+//     paddingHorizontal: 16,
+//     paddingVertical: 8,
+//     borderRadius: 8,
+//     marginLeft: 8,
+//   },
+//   verifyUserIdText: {
+//     color: theme.text,
+//     fontSize: 12,
+//     fontWeight: '700',
+//   },
+//   verifiedIndicator: {
+//     marginLeft: 8,
+//   },
+//   userIdStatus: {
+//     marginTop: 6,
+//     marginLeft: 4,
+//   },
+//   userIdErrorText: {
+//     color: theme.error,
+//     fontSize: 12,
+//     fontWeight: '500',
+//   },
+//   userIdSuccessText: {
+//     color: theme.success,
+//     fontSize: 12,
+//     fontWeight: '500',
+//   },
+//   userIdHelperText: {
+//     color: theme.textTertiary,
+//     fontSize: 12,
+//     fontWeight: '500',
+//   },
+
+//   disabledButton: {
+//     opacity: 0.6,
 //   },
 //   datePickerContainer: {
 //     flexDirection: 'row',
 //     alignItems: 'center',
 //     width: '100%',
-//     height: 50,
+//     height: 52,
 //     borderWidth: 1,
-//     borderColor: 'rgba(255, 255, 255, 0.1)',
+//     borderColor: theme.border,
 //     borderRadius: 12,
-//     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-//     marginBottom: 15,
-//     paddingHorizontal: 15,
+//     backgroundColor: theme.surfaceLight,
+//     paddingHorizontal: 16,
 //   },
 //   datePickerText: {
-//     color: '#FFFFFF',
+//     flex: 1,
+//     color: theme.text,
 //     fontSize: 16,
 //     fontWeight: '500',
-//     marginLeft: 10,
+//     marginLeft: 12,
 //   },
-//   genderLabel: {
-//     color: theme.textSecondary,
-//     fontSize: 14,
-//     marginBottom: 8,
-//     marginLeft: 5,
+//   calendarIcon: {
+//     marginLeft: 8,
 //   },
 //   genderContainer: {
 //     flexDirection: 'row',
 //     justifyContent: 'space-between',
 //     width: '100%',
-//     marginBottom: 20,
+//     gap: 10,
 //   },
 //   genderOption: {
 //     flex: 1,
-//     height: 40,
+//     height: 44,
 //     justifyContent: 'center',
 //     alignItems: 'center',
 //     borderWidth: 1,
-//     borderColor: 'rgba(255, 255, 255, 0.1)',
+//     borderColor: theme.border,
 //     borderRadius: 10,
-//     marginHorizontal: 5,
-//     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+//     backgroundColor: theme.surfaceLight,
 //   },
 //   selectedGender: {
 //     backgroundColor: theme.primary,
@@ -2681,93 +3058,104 @@ export default React.memo(RegisterScreen);
 //   genderText: {
 //     color: theme.textSecondary,
 //     fontSize: 14,
+//     fontWeight: '600',
 //   },
 //   selectedGenderText: {
-//     color: 'white',
-//     fontWeight: '500',
+//     color: theme.text,
+//     fontWeight: '700',
 //   },
-//   button: {
+//   submitButton: {
 //     width: '100%',
-//     height: 50,
-//     borderRadius: 12,
+//     height: 56,
+//     borderRadius: 14,
 //     justifyContent: 'center',
 //     alignItems: 'center',
-//     marginTop: 5,
+//     marginTop: 10,
+//     marginBottom: 16,
 //     flexDirection: 'row',
-//   },
-//   registerButton: {
 //     backgroundColor: theme.primary,
+//     shadowColor: theme.primary,
+//     shadowOffset: { width: 0, height: 4 },
+//     shadowOpacity: 0.4,
+//     shadowRadius: 8,
+//     elevation: 8,
 //   },
-//   disabledButton: {
-//     opacity: 0.5,
-//   },
-//   buttonText: {
+//   submitButtonText: {
 //     color: 'white',
-//     fontSize: 16,
-//     fontWeight: '600',
+//     fontSize: 18,
+//     fontWeight: '700',
+//     letterSpacing: 0.5,
 //   },
 //   buttonIcon: {
 //     marginLeft: 8,
 //   },
 //   cancelButton: {
-//     marginTop: 15,
-//     padding: 10,
+//     padding: 12,
+//     alignItems: 'center',
 //   },
 //   cancelButtonText: {
 //     color: theme.textSecondary,
 //     fontSize: 14,
 //     textAlign: 'center',
 //   },
+//   cancelButtonLink: {
+//     color: theme.primaryLight,
+//     fontWeight: '700',
+//   },
 //   modalContainer: {
 //     flex: 1,
 //     justifyContent: 'center',
 //     alignItems: 'center',
-//     backgroundColor: 'rgba(0, 0, 0, 0.7)',
+//     backgroundColor: 'rgba(0, 0, 0, 0.8)',
 //     padding: 20,
 //   },
 //   modalContent: {
 //     width: '90%',
 //     backgroundColor: theme.surface,
-//     borderRadius: 16,
+//     borderRadius: 20,
 //     padding: 24,
 //     alignItems: 'center',
 //     shadowColor: '#000',
-//     shadowOffset: { width: 0, height: 2 },
-//     shadowOpacity: 0.25,
-//     shadowRadius: 3.84,
-//     elevation: 5,
+//     shadowOffset: { width: 0, height: 8 },
+//     shadowOpacity: 0.4,
+//     shadowRadius: 16,
+//     elevation: 16,
+//     borderWidth: 1,
+//     borderColor: theme.borderLight,
 //   },
 //   modalHeader: {
 //     alignItems: 'center',
-//     marginBottom: 20,
+//     marginBottom: 24,
 //   },
 //   modalTitle: {
-//     fontSize: 20,
-//     fontWeight: '600',
+//     fontSize: 22,
+//     fontWeight: '700',
 //     color: 'white',
 //     marginBottom: 8,
+//     textAlign: 'center',
 //   },
 //   modalSubtitle: {
 //     fontSize: 14,
 //     color: theme.textSecondary,
 //     textAlign: 'center',
+//     lineHeight: 20,
 //   },
 //   otpContainer: {
 //     flexDirection: 'row',
 //     justifyContent: 'space-between',
 //     width: '100%',
-//     marginBottom: 24,
+//     marginBottom: 28,
 //   },
 //   otpDigitInput: {
-//     width: 40,
-//     height: 50,
-//     borderWidth: 1,
-//     borderColor: 'rgba(255, 255, 255, 0.1)',
+//     width: 44,
+//     height: 52,
+//     borderWidth: 2,
+//     borderColor: theme.border,
 //     borderRadius: 12,
-//     backgroundColor: 'rgba(255, 255, 255, 0.05)',
+//     backgroundColor: theme.surfaceLight,
 //     color: '#FFFFFF',
 //     fontSize: 20,
-//     fontWeight: '600',
+//     fontWeight: '700',
 //     textAlign: 'center',
 //     marginHorizontal: 4,
 //     includeFontPadding: false,
@@ -2777,75 +3165,33 @@ export default React.memo(RegisterScreen);
 //     flexDirection: 'row',
 //     justifyContent: 'space-between',
 //     width: '100%',
+//     gap: 12,
 //   },
 //   modalButton: {
 //     flex: 1,
-//     height: 45,
-//     borderRadius: 10,
+//     height: 48,
+//     borderRadius: 12,
 //     justifyContent: 'center',
 //     alignItems: 'center',
-//     marginHorizontal: 5,
 //   },
 //   modalButtonPrimary: {
 //     backgroundColor: theme.primary,
 //   },
 //   modalButtonSecondary: {
-//     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+//     backgroundColor: theme.surfaceLight,
+//     borderWidth: 1,
+//     borderColor: theme.border,
 //   },
 //   modalButtonPrimaryText: {
 //     color: 'white',
 //     fontSize: 16,
-//     fontWeight: '600',
+//     fontWeight: '700',
 //   },
 //   modalButtonSecondaryText: {
 //     color: theme.textSecondary,
 //     fontSize: 16,
+//     fontWeight: '600',
 //   },
 // });
 
-// // Memoize to optimize for live real-time app
 // export default React.memo(RegisterScreen);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
