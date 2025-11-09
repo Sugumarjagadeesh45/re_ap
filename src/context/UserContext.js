@@ -1,8 +1,210 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { getAuth, onAuthStateChanged, signOut } from '@react-native-firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UserService from '../services/userService';
 
 const UserContext = createContext();
+
+export const UserProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const auth = getAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        console.log('Auth state changed:', firebaseUser ? 'User logged in' : 'No user');
+        
+        if (firebaseUser) {
+          console.log('Firebase user detected:', firebaseUser.email);
+          setUser(firebaseUser);
+          
+          // Get backend token
+          const backendToken = await AsyncStorage.getItem('authToken');
+          console.log('Backend token from storage:', backendToken ? 'Exists' : 'Not found');
+          
+          if (backendToken) {
+            setToken(backendToken);
+            // Fetch user profile data
+            await fetchUserProfile();
+          } else {
+            console.log('No backend token found');
+            setLoading(false);
+          }
+        } else {
+          console.log('No Firebase user, checking for backend token...');
+          // Check if we have a backend token even without Firebase user
+          const backendToken = await AsyncStorage.getItem('authToken');
+          if (backendToken) {
+            console.log('Found backend token without Firebase user');
+            setToken(backendToken);
+            await fetchUserProfile();
+          } else {
+            console.log('No authentication found');
+            setUser(null);
+            setUserData(null);
+            setToken(null);
+            setLoading(false);
+          }
+        }
+      } catch (error) {
+        console.error('Auth state change error:', error);
+        setUser(null);
+        setUserData(null);
+        setToken(null);
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Function to fetch user profile
+  const fetchUserProfile = async () => {
+    try {
+      console.log('Fetching user profile...');
+      
+      const response = await UserService.getUserProfile();
+      
+      if (response.success) {
+        console.log('User profile fetched successfully');
+        
+        setUserData(response.userData);
+        
+        // Update user with backend data including photoURL
+        if (response.user) {
+          setUser(prevUser => ({
+            ...prevUser,
+            ...response.user
+          }));
+        }
+      } else {
+        console.log('Failed to fetch user profile:', response.message);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Login function
+  const login = async (authToken, userInfo) => {
+    try {
+      console.log('UserContext login called with token:', authToken ? 'Token exists' : 'No token');
+      
+      // Store token
+      await AsyncStorage.setItem('authToken', authToken);
+      setToken(authToken);
+      
+      // Store user info if provided
+      if (userInfo && userInfo.user) {
+        setUser(userInfo.user);
+      }
+      
+      // Fetch complete user profile
+      await fetchUserProfile();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Login error in UserContext:', error);
+      return { success: false, message: error.message };
+    }
+  };
+
+  const refreshUserData = async () => {
+    console.log('Refreshing user data...');
+    await fetchUserProfile();
+  };
+
+  const updateUserProfile = async (profileData) => {
+    try {
+      console.log('Updating user profile:', profileData);
+      const response = await UserService.updateUserProfile(profileData);
+      
+      if (response.success) {
+        console.log('Profile updated successfully:', response);
+        // Update local state with new data
+        setUser(prev => ({ ...prev, ...response.user }));
+        setUserData(response.userData);
+        
+        return { success: true };
+      } else {
+        console.log('Profile update failed:', response.message);
+        return { success: false, message: response.message };
+      }
+    } catch (error) {
+      console.error('Update profile error:', error);
+      return { success: false, message: 'Failed to update profile' };
+    }
+  };
+
+  const uploadProfilePicture = async (profilePicture) => {
+    try {
+      console.log('Uploading profile picture:', profilePicture);
+      const response = await UserService.uploadProfilePicture(profilePicture);
+      
+      if (response.success) {
+        console.log('Profile picture uploaded successfully:', response);
+        
+        // Update local state with new profile picture
+        setUser(prev => ({ 
+          ...prev, 
+          photoURL: response.user?.photoURL 
+        }));
+        setUserData(prev => ({ 
+          ...prev, 
+          profilePicture: response.userData?.profilePicture 
+        }));
+
+        return { success: true };
+      } else {
+        console.log('Profile picture upload failed:', response.message);
+        return { success: false, message: response.message };
+      }
+    } catch (error) {
+      console.error('Upload profile picture error:', error);
+      return { success: false, message: 'Failed to upload profile picture' };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      console.log('Logging out...');
+      const auth = getAuth();
+      await signOut(auth);
+      await AsyncStorage.removeItem('authToken');
+      await AsyncStorage.removeItem('userInfo');
+      setUser(null);
+      setUserData(null);
+      setToken(null);
+      console.log('Logout completed');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  return (
+    <UserContext.Provider
+      value={{
+        user,
+        userData,
+        token,
+        loading,
+        login,
+        updateUserProfile,
+        uploadProfilePicture,
+        refreshUserData,
+        logout,
+      }}
+    >
+      {children}
+    </UserContext.Provider>
+  );
+};
 
 export const useUser = () => {
   const context = useContext(UserContext);
@@ -11,173 +213,3 @@ export const useUser = () => {
   }
   return context;
 };
-
-export const UserProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(null);
-
-  // Load token from storage on app start
-  useEffect(() => {
-    loadToken();
-  }, []);
-
-  // Fetch user data when token changes
-  useEffect(() => {
-    if (token) {
-      console.log('Token updated, fetching user data...');
-      fetchUserData();
-    } else {
-      console.log('No token available');
-      setLoading(false);
-    }
-  }, [token]);
-
-  const loadToken = async () => {
-    try {
-      console.log('Loading token from storage...');
-      
-      // Check both possible token storage keys
-      let storedToken = await AsyncStorage.getItem('userToken');
-      if (!storedToken) {
-        storedToken = await AsyncStorage.getItem('authToken');
-        if (storedToken) {
-          // Migrate to consistent key
-          await AsyncStorage.setItem('userToken', storedToken);
-        }
-      }
-      
-      console.log('Stored token found:', !!storedToken);
-      if (storedToken) {
-        setToken(storedToken);
-      } else {
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Error loading token:', error);
-      setLoading(false);
-    }
-  };
-
-  const fetchUserData = async () => {
-    try {
-      setLoading(true);
-      console.log('Fetching user data with token:', token);
-      
-      const response = await UserService.getUserProfile(token);
-      console.log('User profile API response:', response);
-      
-      if (response.success) {
-        setUser(response.user);
-        setUserData(response.userData);
-        console.log('User data set successfully:', response.user);
-      } else {
-        console.log('Failed to fetch user data:', response.message);
-        // If token is invalid, clear it
-        if (response.message === 'No token provided' || response.message === 'Invalid or expired token') {
-          await logout();
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateUserProfile = async (profileData) => {
-    try {
-      console.log('Updating profile with token:', token);
-      const response = await UserService.updateUserProfile(profileData, token);
-      
-      if (response.success) {
-        setUser(response.user);
-        setUserData(response.userData);
-        return { success: true, data: response };
-      } else {
-        return { success: false, message: response.message };
-      }
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      return { success: false, message: 'Failed to update profile' };
-    }
-  };
-
-  const uploadProfilePicture = async (profilePicture) => {
-    try {
-      const response = await UserService.uploadProfilePicture(profilePicture, token);
-      
-      if (response.success) {
-        setUser(response.user);
-        setUserData(response.userData);
-        return { success: true, data: response };
-      } else {
-        return { success: false, message: response.message };
-      }
-    } catch (error) {
-      console.error('Error uploading profile picture:', error);
-      return { success: false, message: 'Failed to upload profile picture' };
-    }
-  };
-
-  const login = async (userToken, userInfo) => {
-    try {
-      console.log('Logging in with token:', userToken);
-      console.log('User info:', userInfo);
-      
-      // Store token with consistent key
-      await AsyncStorage.setItem('userToken', userToken);
-      await AsyncStorage.setItem('authToken', userToken);
-      
-      setToken(userToken);
-      setUser(userInfo.user);
-      setUserData(userInfo.userData || null);
-      
-      // Also store user info for persistence
-      await AsyncStorage.setItem('userInfo', JSON.stringify(userInfo.user));
-    } catch (error) {
-      console.error('Error during login:', error);
-      throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      console.log('Logging out...');
-      await AsyncStorage.multiRemove(['userToken', 'authToken', 'userInfo']);
-      setToken(null);
-      setUser(null);
-      setUserData(null);
-    } catch (error) {
-      console.error('Error during logout:', error);
-      throw error;
-    }
-  };
-
-  const refreshUserData = async () => {
-    console.log('Refreshing user data...');
-    await fetchUserData();
-  };
-
-  const value = {
-    user,
-    userData,
-    loading,
-    token,
-    login,
-    logout,
-    updateUserProfile,
-    uploadProfilePicture,
-    refreshUserData,
-    fetchUserData
-  };
-
-  return (
-    <UserContext.Provider value={value}>
-      {children}
-    </UserContext.Provider>
-  );
-};
-
-export default UserContext;

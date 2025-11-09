@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,22 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Platform,
+  PermissionsAndroid,
+  Dimensions
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useUser } from './context/UserContext';
 import UserService from './services/userService';
 import { theme } from '../styles/theme';
+import { Camera, useCameraDevices } from 'react-native-vision-camera';
+import { launchImageLibrary } from 'react-native-image-picker';
+import RNFS from 'react-native-fs';
 
 const gradientColors = ['#0f2027', '#203a43', '#2c5364'];
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const ProfileScreen = () => {
   const { user, userData, loading, token, updateUserProfile, uploadProfilePicture, refreshUserData } = useUser();
@@ -30,6 +37,16 @@ const ProfileScreen = () => {
   const [stats, setStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(false);
+  
+  // Camera states
+  const [cameraModalVisible, setCameraModalVisible] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [isTakingPhoto, setIsTakingPhoto] = useState(false);
+  const [cameraInitialized, setCameraInitialized] = useState(false);
+  const cameraRef = useRef<Camera>(null);
+  const devices = useCameraDevices();
+  const device = devices?.find(d => d.position === (isFrontCamera ? 'front' : 'back')) ?? devices?.[0] ?? null;
 
   // Form state
   const [formData, setFormData] = useState({
@@ -62,9 +79,44 @@ const ProfileScreen = () => {
     }
   }, [user, userData]);
 
+  // Camera permission
+  useEffect(() => {
+    if (cameraModalVisible) {
+      checkCameraPermission();
+    }
+  }, [cameraModalVisible]);
+
+  const checkCameraPermission = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA);
+        if (granted) {
+          setHasCameraPermission(true);
+          setCameraInitialized(true);
+          return true;
+        }
+        const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+        const ok = res === PermissionsAndroid.RESULTS.GRANTED;
+        setHasCameraPermission(ok);
+        setCameraInitialized(true);
+        return ok;
+      } else {
+        const status = await Camera.requestCameraPermission();
+        const ok = status === 'granted';
+        setHasCameraPermission(ok);
+        setCameraInitialized(true);
+        return ok;
+      }
+    } catch (error) {
+      console.error('Camera permission error:', error);
+      setCameraInitialized(true);
+      return false;
+    }
+  };
+
   const loadUserStats = async () => {
     try {
-      const response = await UserService.getUserStats(token);
+      const response = await UserService.getUserStats();
       if (response.success) {
         setStats(response);
       }
@@ -85,7 +137,6 @@ const ProfileScreen = () => {
       Alert.alert('Error', 'Name is required');
       return;
     }
-
     setUpdating(true);
     try {
       const result = await updateUserProfile(formData);
@@ -102,13 +153,141 @@ const ProfileScreen = () => {
     }
   };
 
-  const handleImageUpload = async (imageUrl) => {
-    const result = await uploadProfilePicture(imageUrl);
-    if (result.success) {
-      Alert.alert('Success', 'Profile picture updated successfully');
-    } else {
-      Alert.alert('Error', result.message || 'Failed to update profile picture');
+  // Convert image to base64
+  const convertImageToBase64 = async (imageUri) => {
+    try {
+      console.log('Converting image to base64:', imageUri);
+      
+      // If it's already base64, return as is
+      if (imageUri.startsWith('data:image')) {
+        console.log('Image is already base64');
+        return imageUri;
+      }
+      
+      // Remove file:// prefix if present
+      const cleanUri = imageUri.replace('file://', '');
+      
+      // Check if file exists
+      const fileExists = await RNFS.exists(cleanUri);
+      if (!fileExists) {
+        throw new Error('Image file does not exist');
+      }
+      
+      // Read file and convert to base64
+      const base64 = await RNFS.readFile(cleanUri, 'base64');
+      console.log('Image converted to base64, length:', base64.length);
+      
+      // Determine MIME type from file extension or default to jpeg
+      let mimeType = 'image/jpeg';
+      if (imageUri.toLowerCase().includes('.png')) mimeType = 'image/png';
+      if (imageUri.toLowerCase().includes('.gif')) mimeType = 'image/gif';
+      if (imageUri.toLowerCase().includes('.webp')) mimeType = 'image/webp';
+      
+      const base64Image = `data:${mimeType};base64,${base64}`;
+      console.log('Base64 image created with MIME type:', mimeType);
+      
+      return base64Image;
+    } catch (error) {
+      console.error('Error converting image to base64:', error);
+      throw new Error(`Failed to convert image: ${error.message}`);
     }
+  };
+
+  const handleImageUpload = async (imageUrl) => {
+    try {
+      if (!imageUrl) {
+        throw new Error('No image URL provided');
+      }
+      
+      console.log('Original image URL:', imageUrl);
+      
+      // Convert image to base64 before uploading
+      const base64Image = await convertImageToBase64(imageUrl);
+      
+      console.log('Uploading base64 image, length:', base64Image.length);
+      
+      const result = await uploadProfilePicture(base64Image);
+      if (result.success) {
+        Alert.alert('Success', 'Profile picture updated successfully');
+        setCameraModalVisible(false);
+        // Refresh data to show updated image
+        await refreshUserData();
+      } else {
+        Alert.alert('Error', result.message || 'Failed to update profile picture');
+      }
+    } catch (error) {
+      console.error('Image upload error:', error);
+      Alert.alert('Error', 'Failed to process image: ' + error.message);
+    }
+  };
+
+  const handleProfilePicturePress = () => {
+    setCameraModalVisible(true);
+  };
+
+  const handleFlipCamera = () => {
+    setIsFrontCamera(prev => !prev);
+  };
+
+  const handleTakePhoto = async () => {
+    if (!cameraRef.current || isTakingPhoto) return;
+    setIsTakingPhoto(true);
+    try {
+      const photo = await cameraRef.current.takePhoto({
+        flash: 'off',
+        qualityPrioritization: 'quality',
+      });
+      
+      // Convert path to URI format
+      let imageUri = photo.path;
+      if (Platform.OS === 'android' && !imageUri.startsWith('file://')) {
+        imageUri = 'file://' + imageUri;
+      }
+      
+      console.log('Camera photo URI:', imageUri);
+      await handleImageUpload(imageUri);
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    } finally {
+      setIsTakingPhoto(false);
+    }
+  };
+
+  const handleOpenGallery = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 800,
+        maxHeight: 800,
+      });
+      
+      if (result.assets && result.assets.length > 0) {
+        const selectedImage = result.assets[0];
+        console.log('Gallery image URI:', selectedImage.uri);
+        await handleImageUpload(selectedImage.uri);
+      }
+    } catch (error) {
+      console.error('Error opening gallery:', error);
+      Alert.alert('Error', 'Failed to open gallery');
+    }
+  };
+
+  // Helper function to check if image URI is valid
+  const getProfileImageUri = () => {
+    const sources = [
+      user?.photoURL,
+      userData?.profilePicture
+    ];
+
+    // Find first valid source that's base64 or URL (not local file)
+    const validSource = sources.find(source => 
+      source && 
+      (source.startsWith('data:image') || source.startsWith('http'))
+    );
+
+    return validSource || 'https://randomuser.me/api/portraits/men/1.jpg';
   };
 
   const renderPost = ({ item }) => (
@@ -151,16 +330,10 @@ const ProfileScreen = () => {
               <Icon name="person" size={22} color={theme.accentColor} />
               <Text style={styles.logo}>REELS2CHAT</Text>
             </View>
-            <View style={styles.headerIcons}>
-              <TouchableOpacity style={styles.headerIcon}>
-                <Icon name="search" size={18} color={theme.textPrimary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerIcon}>
-                <Icon name="mail" size={18} color={theme.textPrimary} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.menuIcon}>
+              <Icon name="menu" size={24} color={theme.textPrimary} />
+            </TouchableOpacity>
           </View>
-
           <ScrollView 
             style={styles.content}
             refreshControl={
@@ -168,20 +341,21 @@ const ProfileScreen = () => {
             }
           >
             <View style={styles.profileHeader}>
-              <View style={styles.profileAvatarContainer}>
+              <TouchableOpacity 
+                style={styles.profileAvatarContainer}
+                onPress={handleProfilePicturePress}
+              >
                 <Image 
-                  source={{ 
-                    uri: user?.photoURL || userData?.profilePicture || 'https://randomuser.me/api/portraits/men/1.jpg' 
-                  }} 
+                  source={{ uri: getProfileImageUri() }} 
                   style={styles.profileAvatarImage} 
+                  onError={(e) => {
+                    console.log('Image load error:', e.nativeEvent.error);
+                  }}
                 />
-                <TouchableOpacity 
-                  style={styles.editPhotoButton}
-                  onPress={() => handleImageUpload('https://randomuser.me/api/portraits/men/1.jpg')}
-                >
+                <View style={styles.editPhotoButton}>
                   <Icon name="camera-alt" size={16} color={theme.textPrimary} />
-                </TouchableOpacity>
-              </View>
+                </View>
+              </TouchableOpacity>
               
               <Text style={styles.profileName}>{user?.name || 'Unknown User'}</Text>
               <Text style={styles.profileBio}>{userData?.bio || 'No bio yet'}</Text>
@@ -192,7 +366,7 @@ const ProfileScreen = () => {
                   <Text style={styles.profileDetailText}>{userData.location}</Text>
                 </View>
               )}
-
+              
               {stats && (
                 <View style={styles.profileStats}>
                   <View style={styles.statItem}>
@@ -213,7 +387,7 @@ const ProfileScreen = () => {
                   </View>
                 </View>
               )}
-
+              
               <View style={styles.profileActions}>
                 <TouchableOpacity 
                   style={[styles.profileBtn, styles.editBtn]}
@@ -226,7 +400,7 @@ const ProfileScreen = () => {
                 </TouchableOpacity>
               </View>
             </View>
-
+            
             <View style={styles.profileTabs}>
               {['Posts', 'Reels', 'Tagged'].map((tab) => (
                 <TouchableOpacity
@@ -240,7 +414,7 @@ const ProfileScreen = () => {
                 </TouchableOpacity>
               ))}
             </View>
-
+            
             <FlatList
               data={[]}
               renderItem={renderPost}
@@ -253,7 +427,7 @@ const ProfileScreen = () => {
           </ScrollView>
         </View>
       </LinearGradient>
-
+      
       {/* Edit Profile Modal */}
       <Modal
         visible={editModalVisible}
@@ -269,7 +443,6 @@ const ProfileScreen = () => {
                 <Icon name="close" size={24} color={theme.textPrimary} />
               </TouchableOpacity>
             </View>
-
             <ScrollView style={styles.modalBody}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Name *</Text>
@@ -281,7 +454,6 @@ const ProfileScreen = () => {
                   placeholderTextColor={theme.textSecondary}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Bio</Text>
                 <TextInput
@@ -294,7 +466,6 @@ const ProfileScreen = () => {
                   numberOfLines={3}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Location</Text>
                 <TextInput
@@ -305,7 +476,6 @@ const ProfileScreen = () => {
                   placeholderTextColor={theme.textSecondary}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Website</Text>
                 <TextInput
@@ -316,7 +486,6 @@ const ProfileScreen = () => {
                   placeholderTextColor={theme.textSecondary}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Gender</Text>
                 <TextInput
@@ -327,7 +496,6 @@ const ProfileScreen = () => {
                   placeholderTextColor={theme.textSecondary}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Date of Birth</Text>
                 <TextInput
@@ -339,7 +507,6 @@ const ProfileScreen = () => {
                 />
               </View>
             </ScrollView>
-
             <View style={styles.modalFooter}>
               <TouchableOpacity 
                 style={[styles.modalButton, styles.cancelButton]}
@@ -362,11 +529,91 @@ const ProfileScreen = () => {
           </View>
         </View>
       </Modal>
+      
+      {/* Camera Modal */}
+      <Modal
+        visible={cameraModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setCameraModalVisible(false)}
+      >
+        <View style={styles.cameraContainer}>
+          <StatusBar backgroundColor="#000" barStyle="light-content" />
+          
+          {/* Camera Header */}
+          <View style={styles.cameraHeader}>
+            <TouchableOpacity 
+              style={styles.cameraCloseButton}
+              onPress={() => setCameraModalVisible(false)}
+            >
+              <Icon name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.cameraTitle}>Update Profile Picture</Text>
+            <View style={styles.cameraHeaderPlaceholder} />
+          </View>
+          
+          {/* Camera View */}
+          {cameraInitialized && hasCameraPermission && device ? (
+            <Camera
+              ref={cameraRef}
+              style={styles.camera}
+              device={device}
+              isActive={cameraModalVisible}
+              photo={true}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.cameraPlaceholder}>
+              <Text style={styles.cameraPlaceholderText}>
+                {!hasCameraPermission ? 'Camera permission required' : 'Camera not available'}
+              </Text>
+            </View>
+          )}
+          
+          {/* Camera Controls */}
+          <View style={styles.cameraControls}>
+            {/* Gallery Button - Left */}
+            <TouchableOpacity 
+              style={styles.cameraControlButton}
+              onPress={handleOpenGallery}
+            >
+              <Icon name="photo-library" size={28} color="#fff" />
+              <Text style={styles.cameraControlText}>Gallery</Text>
+            </TouchableOpacity>
+            
+            {/* Capture Button - Center */}
+            <TouchableOpacity
+              style={[styles.captureButton, isTakingPhoto && styles.captureButtonDisabled]}
+              onPress={handleTakePhoto}
+              disabled={isTakingPhoto}
+            >
+              <View style={styles.captureInner} />
+            </TouchableOpacity>
+            
+            {/* Flip Camera Button - Right */}
+            <TouchableOpacity 
+              style={styles.cameraControlButton}
+              onPress={handleFlipCamera}
+            >
+              <Icon name="flip-camera-ios" size={28} color="#fff" />
+              <Text style={styles.cameraControlText}>Flip</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  menuIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: theme.background,
@@ -669,6 +916,83 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: theme.textPrimary,
     fontWeight: '600',
+  },
+  // Camera Styles
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  cameraHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#000',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  cameraCloseButton: {
+    padding: 8,
+  },
+  cameraTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  cameraHeaderPlaceholder: {
+    width: 40,
+  },
+  camera: {
+    flex: 1,
+    width: '100%',
+  },
+  cameraPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  cameraPlaceholderText: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  cameraControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+    paddingVertical: 30,
+    backgroundColor: '#000',
+  },
+  cameraControlButton: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  cameraControlText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 5,
+  },
+  captureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  captureButtonDisabled: {
+    opacity: 0.5,
+  },
+  captureInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
   },
 });
 
