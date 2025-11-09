@@ -1034,22 +1034,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
   },
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   modalContent: {
     width: '85%',
     backgroundColor: '#252020ce',
@@ -1062,23 +1046,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',

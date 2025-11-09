@@ -92,12 +92,7 @@ export default AuthNavigator;
 
 
 
-
-
-
-
-
-// // Create a new file: src/navigation/AuthNavigator.js
+// // D:\cddd\NEW_reals2chat_frontend-main\src\navigation\AuthNavigator.js
 // import React, { useEffect, useState } from 'react';
 // import { NavigationContainer } from '@react-navigation/native';
 // import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -106,7 +101,9 @@ export default AuthNavigator;
 // import LoginScreen from '../screens/LoginScreen';
 // import MainTabNavigator from './MainTabNavigator';
 // import { View, ActivityIndicator } from 'react-native';
+// import getApiUrl from '../utiliti/config';
 
+// const API_URL = getApiUrl;
 // const Stack = createNativeStackNavigator();
 
 // const AuthNavigator = () => {
@@ -126,19 +123,26 @@ export default AuthNavigator;
 //           const token = await AsyncStorage.getItem('authToken');
 //           if (token) {
 //             // Validate the token with the backend
-//             const response = await fetch(`${API_URL}/api/auth/profile`, {
-//               method: 'GET',
-//               headers: {
-//                 'Content-Type': 'application/json',
-//                 Authorization: `Bearer ${token}`,
-//               },
-//             });
+//             try {
+//               const response = await fetch(`${API_URL}/api/user/profile`, {
+//                 method: 'GET',
+//                 headers: {
+//                   'Content-Type': 'application/json',
+//                   Authorization: `Bearer ${token}`,
+//                 },
+//               });
 
-//             if (response.ok) {
-//               // Token is valid, consider the user authenticated
-//               setUser({ email: 'Backend User' });
-//             } else {
-//               // Token is invalid, clear it
+//               if (response.ok) {
+//                 // Token is valid, consider the user authenticated
+//                 setUser({ email: 'Backend User' });
+//               } else {
+//                 // Token is invalid, clear it
+//                 await AsyncStorage.removeItem('authToken');
+//                 await AsyncStorage.removeItem('userInfo');
+//                 setUser(null);
+//               }
+//             } catch (error) {
+//               console.error('Error validating token:', error);
 //               await AsyncStorage.removeItem('authToken');
 //               await AsyncStorage.removeItem('userInfo');
 //               setUser(null);

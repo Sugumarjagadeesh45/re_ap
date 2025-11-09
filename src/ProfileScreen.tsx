@@ -26,17 +26,22 @@ import { theme } from '../styles/theme';
 import { Camera, useCameraDevices } from 'react-native-vision-camera';
 import { launchImageLibrary } from 'react-native-image-picker';
 import RNFS from 'react-native-fs';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 
 const gradientColors = ['#0f2027', '#203a43', '#2c5364'];
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const ProfileScreen = () => {
-  const { user, userData, loading, token, updateUserProfile, uploadProfilePicture, refreshUserData } = useUser();
+  const navigation = useNavigation();
+  const { user, userData, loading, token, updateUserProfile, uploadProfilePicture, refreshUserData, logout } = useUser();
   const [activeTab, setActiveTab] = useState('Posts');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [stats, setStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [updating, setUpdating] = useState(false);
+  
+  // Menu states
+  const [menuModalVisible, setMenuModalVisible] = useState(false);
   
   // Camera states
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
@@ -153,6 +158,124 @@ const ProfileScreen = () => {
     }
   };
 
+  // Menu functions
+  const handleMenuPress = () => {
+    setMenuModalVisible(true);
+  };
+
+  const handleMenuOptionPress = (option) => {
+    setMenuModalVisible(false);
+    
+    switch (option) {
+      case 'logout':
+        handleLogout();
+        break;
+      case 'settings':
+        // Navigate to settings screen
+        Alert.alert('Settings', 'Settings screen would open here');
+        break;
+      case 'blocked':
+        Alert.alert('Blocked Users', 'Blocked users list would open here');
+        break;
+      case 'report':
+        Alert.alert('Report', 'Report options would appear here');
+        break;
+      case 'requests':
+        Alert.alert('Requests', 'Friend/follow requests would appear here');
+        break;
+      case 'archive':
+        Alert.alert('Archive', 'Archived content would appear here');
+        break;
+      case 'saved':
+        Alert.alert('Saved', 'Saved reels would appear here');
+        break;
+      case 'drafts':
+        Alert.alert('Drafts', 'Draft reels would appear here');
+        break;
+      case 'analytics':
+        Alert.alert('Analytics', 'Content analytics would appear here');
+        break;
+      case 'monetization':
+        Alert.alert('Monetization', 'Monetization settings would appear here');
+        break;
+      case 'creator':
+        Alert.alert('Creator Studio', 'Creator studio would open here');
+        break;
+      case 'privacy':
+        Alert.alert('Privacy', 'Privacy settings would appear here');
+        break;
+      case 'help':
+        Alert.alert('Help & Support', 'Help center would open here');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+              console.log('Logout successful, navigating to Login...');
+              
+              // Try multiple navigation approaches to ensure we reach the Login screen
+              try {
+                // First try: Use navigation.dispatch with CommonActions
+                navigation.dispatch(
+                  CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: 'Login' }],
+                  })
+                );
+              } catch (error1) {
+                console.log('First navigation approach failed:', error1.message);
+                
+                try {
+                  // Second try: Use navigation.getParent()?.dispatch
+                  navigation.getParent()?.dispatch(
+                    CommonActions.reset({
+                      index: 0,
+                      routes: [{ name: 'Login' }],
+                    })
+                  );
+                } catch (error2) {
+                  console.log('Second navigation approach failed:', error2.message);
+                  
+                  try {
+                    // Third try: Use navigation.reset
+                    navigation.reset({
+                      index: 0,
+                      routes: [{ name: 'Login' }],
+                    });
+                  } catch (error3) {
+                    console.log('Third navigation approach failed:', error3.message);
+                    
+                    // Fourth try: Use navigation.navigate as a fallback
+                    navigation.navigate('Login');
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Logout navigation error:', error);
+              // Even if navigation fails, we've already logged out
+              Alert.alert('Logged Out', 'You have been successfully logged out.');
+            }
+          },
+        },
+      ]
+    );
+  };
   // Convert image to base64
   const convertImageToBase64 = async (imageUri) => {
     try {
@@ -309,6 +432,23 @@ const ProfileScreen = () => {
     </View>
   );
 
+  // Menu options data
+  const menuOptions = [
+    { id: 'settings', icon: 'settings', title: 'Settings', color: theme.textPrimary },
+    { id: 'saved', icon: 'bookmark', title: 'Saved Reels', color: theme.textPrimary },
+    { id: 'drafts', icon: 'drafts', title: 'Drafts', color: theme.textPrimary },
+    { id: 'archive', icon: 'archive', title: 'Archive', color: theme.textPrimary },
+    { id: 'analytics', icon: 'analytics', title: 'Analytics', color: theme.textPrimary },
+    { id: 'monetization', icon: 'attach-money', title: 'Monetization', color: theme.textPrimary },
+    { id: 'creator', icon: 'star', title: 'Creator Studio', color: theme.textPrimary },
+    { id: 'requests', icon: 'group-add', title: 'Requests', color: theme.textPrimary },
+    { id: 'blocked', icon: 'block', title: 'Blocked Users', color: theme.textPrimary },
+    { id: 'privacy', icon: 'lock', title: 'Privacy', color: theme.textPrimary },
+    { id: 'help', icon: 'help', title: 'Help & Support', color: theme.textPrimary },
+    { id: 'report', icon: 'flag', title: 'Report a Problem', color: theme.textPrimary },
+    { id: 'logout', icon: 'logout', title: 'Logout', color: '#FF4444' },
+  ];
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -330,7 +470,7 @@ const ProfileScreen = () => {
               <Icon name="person" size={22} color={theme.accentColor} />
               <Text style={styles.logo}>REELS2CHAT</Text>
             </View>
-            <TouchableOpacity style={styles.menuIcon}>
+            <TouchableOpacity style={styles.menuIcon} onPress={handleMenuPress}>
               <Icon name="menu" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -427,6 +567,65 @@ const ProfileScreen = () => {
           </ScrollView>
         </View>
       </LinearGradient>
+      
+      {/* Menu Modal - FIXED POSITIONING */}
+      <Modal
+        visible={menuModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setMenuModalVisible(false)}
+      >
+        <View style={styles.menuModalOverlay}>
+          <TouchableOpacity 
+            style={styles.menuModalBackdrop}
+            activeOpacity={1}
+            onPress={() => setMenuModalVisible(false)}
+          />
+          <View style={styles.menuModalContainer}>
+            <View style={styles.menuModalContent}>
+              <View style={styles.menuHeader}>
+                <Text style={styles.menuTitle}>Options</Text>
+                <TouchableOpacity 
+                  style={styles.menuCloseButton}
+                  onPress={() => setMenuModalVisible(false)}
+                >
+                  <Icon name="close" size={24} color={theme.textPrimary} />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                style={styles.menuBody}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.menuBodyContent}
+              >
+                {menuOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[
+                      styles.menuOption,
+                      option.id === 'logout' && styles.menuOptionLogout
+                    ]}
+                    onPress={() => handleMenuOptionPress(option.id)}
+                  >
+                    <Icon 
+                      name={option.icon} 
+                      size={22} 
+                      color={option.color} 
+                      style={styles.menuOptionIcon} 
+                    />
+                    <Text style={[
+                      styles.menuOptionText,
+                      option.id === 'logout' && styles.logoutText
+                    ]}>
+                      {option.title}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </Modal>
       
       {/* Edit Profile Modal */}
       <Modal
@@ -842,7 +1041,76 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 10,
   },
-  // Modal Styles
+  // FIXED Menu Modal Styles
+  menuModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  menuModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  menuModalContainer: {
+    backgroundColor: theme.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    top:20,
+    maxHeight: '70%', // Reduced height to avoid bottom navigation
+    marginBottom: Platform.OS === 'android' ? 20 : 0, // Extra margin for Android
+  },
+  menuModalContent: {
+    paddingBottom: Platform.OS === 'android' ? 30 : 20, // Extra padding for Android
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  menuTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.textPrimary,
+  },
+  menuCloseButton: {
+    padding: 4,
+  },
+  menuBody: {
+    maxHeight: 400, // Limit height
+  },
+  menuBodyContent: {
+    padding: 20,
+    paddingTop: 10,
+  },
+  menuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  menuOptionLogout: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderBottomWidth: 0,
+  },
+  menuOptionIcon: {
+    marginRight: 15,
+    width: 24,
+  },
+  menuOptionText: {
+    fontSize: 16,
+    color: theme.textPrimary,
+    fontWeight: '500',
+  },
+  logoutText: {
+    color: '#FF4444',
+    fontWeight: '600',
+  },
+  // Edit Profile Modal Styles
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
