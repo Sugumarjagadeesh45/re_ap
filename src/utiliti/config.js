@@ -40,7 +40,7 @@ const getApiUrl = () => {
   
   if (Platform.OS === 'android') {
     // Use your PC's Wi-Fi IP address for real devices
-    return 'http://192.168.74.126:5000';
+    return 'http://10.50.135.126:5000';
   }
   
   return 'http://localhost:5000';
