@@ -586,6 +586,19 @@ useEffect(() => {
                 />
               </View>
 
+           
+
+<View style={styles.inputContainer}>
+  <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+  <TextInput
+    style={[styles.input, { color: theme.textSecondary }]}
+    placeholder="User ID"
+    placeholderTextColor={theme.textSecondary}
+    value={userProfile?.userId || ''}
+    editable={false}
+  />
+</View>
+
               <TouchableOpacity
                 style={styles.datePickerContainer}
                 onPress={() => setShowDatePicker(true)}

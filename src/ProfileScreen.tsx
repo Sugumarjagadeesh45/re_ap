@@ -497,9 +497,13 @@ const ProfileScreen = () => {
                 </View>
               </TouchableOpacity>
               
-              <Text style={styles.profileName}>{user?.name || 'Unknown User'}</Text>
-              <Text style={styles.profileBio}>{userData?.bio || 'No bio yet'}</Text>
-              
+           
+
+<Text style={styles.profileName}>{user?.name || 'Unknown User'}</Text>
+{user?.userId && (
+  <Text style={styles.profileUserId}>ID: {user.userId}</Text>
+)}
+<Text style={styles.profileBio}>{userData?.bio || 'No bio yet'}</Text>
               {userData?.location && (
                 <View style={styles.profileDetail}>
                   <Icon name="location-on" size={14} color={theme.textSecondary} />
@@ -805,6 +809,15 @@ const ProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
+
+  profileUserId: {
+  fontSize: 14,
+  color: theme.accentColor,
+  marginBottom: 5,
+  fontWeight: '600',
+  fontFamily: 'Poppins',
+},
+
   menuIcon: {
     width: 38,
     height: 38,

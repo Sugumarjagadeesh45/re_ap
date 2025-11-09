@@ -57,6 +57,13 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   
+  // User ID state
+  const [userId, setUserId] = useState('');
+  const [userIdMode, setUserIdMode] = useState<'auto' | 'custom'>('auto');
+  const [userIdVerified, setUserIdVerified] = useState(false);
+  const [checkingUserId, setCheckingUserId] = useState(false);
+  const [userIdError, setUserIdError] = useState('');
+  
   // Verification states
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -69,7 +76,7 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [phoneConfirmation, setPhoneConfirmation] = useState<any>(null);
   const [emailOTPGenerated, setEmailOTPGenerated] = useState('');
   const [sendingOTP, setSendingOTP] = useState({ phone: false, email: false });
-  
+
   // Alert state
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
@@ -104,6 +111,88 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       AsyncStorage.removeItem('isRegistering');
     };
   }, []);
+
+  // Auto-generate user ID on mount
+  useEffect(() => {
+    if (userIdMode === 'auto') {
+      handleGenerateUserId();
+    }
+  }, [userIdMode]);
+
+  // User ID functions
+  const handleGenerateUserId = async () => {
+    try {
+      setCheckingUserId(true);
+      const response = await fetch(`${API_URL}/api/auth/generate-user-id`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setUserId(data.userId);
+        setUserIdVerified(true);
+        setUserIdError('');
+      } else {
+        throw new Error(data.message || 'Failed to generate User ID');
+      }
+    } catch (error: any) {
+      console.error('Generate user ID error:', error);
+      showQuickAlert('Failed to generate User ID. Please try again.', 'error');
+    } finally {
+      setCheckingUserId(false);
+    }
+  };
+
+  const handleVerifyUserId = async () => {
+    if (!userId) {
+      setUserIdError('Please enter a User ID');
+      return;
+    }
+    
+    try {
+      setCheckingUserId(true);
+      const response = await fetch(`${API_URL}/api/auth/check-user-id`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId }),
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setUserIdVerified(true);
+        setUserIdError('');
+        showQuickAlert('User ID is available!', 'success');
+      } else {
+        setUserIdVerified(false);
+        setUserIdError(data.message || 'User ID verification failed');
+        showQuickAlert(data.message || 'User ID verification failed', 'error');
+      }
+    } catch (error: any) {
+      console.error('Verify user ID error:', error);
+      setUserIdVerified(false);
+      setUserIdError('Failed to verify User ID');
+      showQuickAlert('Failed to verify User ID. Please try again.', 'error');
+    } finally {
+      setCheckingUserId(false);
+    }
+  };
+
+  const handleUserIdModeChange = (mode: 'auto' | 'custom') => {
+    setUserIdMode(mode);
+    setUserIdVerified(false);
+    setUserIdError('');
+    
+    if (mode === 'auto') {
+      handleGenerateUserId();
+    } else {
+      setUserId('');
+    }
+  };
 
   // Toast alert animation (slide from top)
   const showQuickAlert = (message: string, type: string = 'error') => {
@@ -181,7 +270,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     showQuickAlert('Sending OTP to phone...', 'success');
     try {
       setSendingOTP({ ...sendingOTP, phone: true });
-      // Set flag to indicate we're in registration process
       await AsyncStorage.setItem('isRegistering', 'true');
       const confirmation = await auth().signInWithPhoneNumber(`+91${phone}`);
       setPhoneConfirmation(confirmation);
@@ -189,7 +277,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     } catch (error: any) {
       console.error('Phone OTP error:', error.code, error.message);
       showQuickAlert('Failed to send OTP. Please try again.', 'error');
-      // Clear flag on error
       await AsyncStorage.removeItem('isRegistering');
     } finally {
       setSendingOTP({ ...sendingOTP, phone: false });
@@ -203,14 +290,12 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     if (text && index < 5) {
       phoneOTPFRefs.current[index + 1]?.focus();
     }
-    // Auto-verify when 6 digits are entered
     if (index === 5 && text) {
       const otp = newOTP.join('');
       if (otp.length === 6) {
         try {
           setLoading(true);
           await phoneConfirmation.confirm(otp);
-          // Immediately sign out to prevent automatic navigation
           await auth().signOut();
           setPhoneVerified(true);
           setShowPhoneOTPModal(false);
@@ -219,7 +304,7 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         } catch (error: any) {
           console.error('Phone OTP verification error:', error.code, error.message);
           showQuickAlert('Invalid OTP', 'error');
-          setPhoneOTP(['', '', '', '', '', '']); // Reset OTP on failure
+          setPhoneOTP(['', '', '', '', '', '']);
         } finally {
           setLoading(false);
         }
@@ -247,7 +332,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     try {
       setLoading(true);
       await phoneConfirmation.confirm(otp);
-      // Immediately sign out to prevent automatic navigation
       await auth().signOut();
       setPhoneVerified(true);
       setShowPhoneOTPModal(false);
@@ -262,22 +346,29 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Email verification functions
-  const handleSendEmailOTP = async () => {
-    if (!email) {
-      showQuickAlert('Please enter an email address', 'error');
-      return;
-    }
-    if (!validateEmail(email)) {
-      showQuickAlert('Please enter a valid email address', 'error');
-      return;
-    }
-    triggerButtonHighlight();
-    showQuickAlert('Sending OTP to email...', 'success');
+const handleSendEmailOTP = async () => {
+  if (!email) {
+    showQuickAlert('Please enter an email address', 'error');
+    return;
+  }
+  if (!validateEmail(email)) {
+    showQuickAlert('Please enter a valid email address', 'error');
+    return;
+  }
+
+  triggerButtonHighlight();
+  
+  try {
+    setSendingOTP({ ...sendingOTP, email: true });
+    
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     setEmailOTPGenerated(otp);
+    
+    console.log('Generated OTP:', otp); // For testing - remove in production
+    
+    // Try to send via backend first
     try {
-      setSendingOTP({ ...sendingOTP, email: true });
       const response = await fetch(`${API_URL}/api/auth/send-otp-email`, {
         method: 'POST',
         headers: {
@@ -289,19 +380,31 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           otp,
         }),
       });
+      
       const data = await response.json();
+      
       if (response.ok) {
         setShowEmailOTPModal(true);
+        showQuickAlert('OTP sent to your email!', 'success');
       } else {
-        showQuickAlert(data.message || 'Failed to send OTP', 'error');
+        // If backend fails, show OTP directly for testing
+        setShowEmailOTPModal(true);
+        showQuickAlert(`Backend email service unavailable. Use OTP: ${otp}`, 'warning');
       }
-    } catch (error: any) {
-      console.error('Email OTP error:', error);
-      showQuickAlert('Failed to send OTP. Please check your connection', 'error');
-    } finally {
-      setSendingOTP({ ...sendingOTP, email: false });
+    } catch (backendError) {
+      // If backend completely fails, show OTP directly
+      console.log('Backend email service failed, showing OTP directly:', otp);
+      setShowEmailOTPModal(true);
+      showQuickAlert(`Email service temporary unavailable. Use OTP: ${otp}`, 'warning');
     }
-  };
+    
+  } catch (error: any) {
+    console.error('Email OTP error:', error);
+    showQuickAlert('Failed to process OTP request. Please try again.', 'error');
+  } finally {
+    setSendingOTP({ ...sendingOTP, email: false });
+  }
+};
 
   const handleEmailOTPChange = (text: string, index: number) => {
     const newOTP = [...emailOTP];
@@ -310,7 +413,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     if (text && index < 5) {
       emailOTPFRefs.current[index + 1]?.focus();
     }
-    // Auto-verify when 6 digits are entered
     if (index === 5 && text) {
       const otp = newOTP.join('');
       if (otp.length === 6) {
@@ -366,6 +468,11 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   const handleSubmit = async () => {
+    if (!userId || !userIdVerified) {
+      showQuickAlert('Please set up your User ID', 'error');
+      return;
+    }
+
     if (!name || !phone || !email || !password || !confirmPassword) {
       showQuickAlert('Please fill all fields', 'error');
       return;
@@ -406,6 +513,7 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           phone,
           email,
           password,
+          userId,
           dateOfBirth: formattedDateOfBirth,
           gender,
           isPhoneVerified: phoneVerified,
@@ -414,7 +522,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       });
       const data = await response.json();
       if (response.ok) {
-        // Clear registration flag and navigate to Main
         await AsyncStorage.removeItem('isRegistering');
         showQuickAlert('Registration successful!', 'success');
         navigation.reset({
@@ -454,25 +561,25 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <View style={[styles.gradientCircle, styles.circle4]} />
       </View>
       {/* Quick Alert */}
-     {alertVisible && (
-  <Animated.View
-    style={[
-      styles.alertContainer,
-      {
-        transform: [{ translateY: alertSlideAnim }],
-        backgroundColor: alertType === 'success' ? theme.success : theme.error,
-      },
-    ]}
-  >
-    <Icon
-      name={alertType === 'success' ? 'check-circle' : 'error'}
-      size={20}
-      color="#FFF"
-      style={styles.alertIcon}
-    />
-    <Text style={styles.alertText}>{alertMessage}</Text>
-  </Animated.View>
-)}
+      {alertVisible && (
+        <Animated.View
+          style={[
+            styles.alertContainer,
+            {
+              transform: [{ translateY: alertSlideAnim }],
+              backgroundColor: alertType === 'success' ? theme.success : theme.error,
+            },
+          ]}
+        >
+          <Icon
+            name={alertType === 'success' ? 'check-circle' : 'error'}
+            size={20}
+            color="#FFF"
+            style={styles.alertIcon}
+          />
+          <Text style={styles.alertText}>{alertMessage}</Text>
+        </Animated.View>
+      )}
 
       {/* Content */}
       <KeyboardAvoidingView
@@ -501,6 +608,8 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             keyboardShouldPersistTaps="handled"
           >
             <Text style={styles.sectionTitle}>Create Account</Text>
+            
+            {/* Name Field */}
             <View style={styles.inputContainer}>
               <Icon name="person" size={20} color={theme.textSecondary} style={styles.inputIcon} />
               <TextInput
@@ -511,12 +620,10 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 onChangeText={setName}
                 autoCapitalize="words"
                 autoCorrect={false}
-                spellCheck={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
               />
             </View>
+
+            {/* Phone Field */}
             <View style={styles.inputContainer}>
               <Icon name="phone" size={20} color={theme.textSecondary} style={styles.inputIcon} />
               <View style={styles.phoneInputWrapper}>
@@ -529,11 +636,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   value={phone}
                   onChangeText={setPhone}
                   maxLength={10}
-                  autoCorrect={false}
-                  spellCheck={false}
-                  autoComplete="off"
-                  importantForAutofill="no"
-                  textContentType="none"
                 />
               </View>
               <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
@@ -556,6 +658,8 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </TouchableOpacity>
               </Animated.View>
             </View>
+
+            {/* Email Field */}
             <View style={styles.inputContainer}>
               <Icon name="email" size={20} color={theme.textSecondary} style={styles.inputIcon} />
               <TextInput
@@ -566,11 +670,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
               />
               <Animated.View style={{ transform: [{ scale: buttonAnim }] }}>
                 <TouchableOpacity
@@ -592,6 +691,73 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </TouchableOpacity>
               </Animated.View>
             </View>
+
+            {/* User ID Field */}
+            <View style={styles.inputContainer}>
+              <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+              <View style={styles.userIdContainer}>
+                <TextInput
+                  style={[styles.userIdInput, !userIdVerified && userIdMode === 'custom' && styles.unverifiedInput]}
+                  placeholder="User ID"
+                  placeholderTextColor={theme.textSecondary}
+                  value={userId}
+                  onChangeText={(text) => {
+                    setUserId(text);
+                    if (userIdMode === 'custom') {
+                      setUserIdVerified(false);
+                    }
+                    setUserIdError('');
+                  }}
+                  editable={userIdMode === 'custom'}
+                  autoCapitalize="characters"
+                />
+                <View style={styles.userIdControls}>
+                  <TouchableOpacity
+                    style={[styles.userIdModeButton, userIdMode === 'auto' && styles.activeUserIdMode]}
+                    onPress={() => handleUserIdModeChange('auto')}
+                  >
+                    <Text style={styles.userIdModeText}>A</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.userIdModeButton, userIdMode === 'custom' && styles.activeUserIdMode]}
+                    onPress={() => handleUserIdModeChange('custom')}
+                  >
+                    <Text style={styles.userIdModeText}>C</Text>
+                  </TouchableOpacity>
+                  {userIdMode === 'custom' && (
+                    <TouchableOpacity
+                      style={[
+                        styles.verifyUserIdButton,
+                        userIdVerified ? styles.verifiedButton : styles.unverifiedButton,
+                        (checkingUserId || loading) && styles.disabledButton,
+                      ]}
+                      onPress={handleVerifyUserId}
+                      disabled={checkingUserId || loading || !userId}
+                    >
+                      {checkingUserId ? (
+                        <ActivityIndicator size="small" color="#FFF" />
+                      ) : userIdVerified ? (
+                        <Icon name="check-circle" size={16} color="#FFF" />
+                      ) : (
+                        <Text style={styles.verifyUserIdText}>Verify</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+            {userIdError ? (
+              <Text style={styles.errorText}>{userIdError}</Text>
+            ) : (
+              <Text style={styles.helperText}>
+                {userIdMode === 'auto' 
+                  ? 'Auto-generated User ID' 
+                  : 'Must be 6+ characters, include a number, no special characters'
+                }
+              </Text>
+            )}
+
+            {/* Password Fields */}
             <View style={styles.inputContainer}>
               <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
               <TextInput
@@ -602,11 +768,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 value={password}
                 onChangeText={setPassword}
                 autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
               />
             </View>
             <View style={styles.inputContainer}>
@@ -619,13 +780,10 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 autoCapitalize="none"
-                autoCorrect={false}
-                spellCheck={false}
-                autoComplete="off"
-                importantForAutofill="no"
-                textContentType="none"
               />
             </View>
+
+            {/* Date of Birth */}
             <TouchableOpacity style={styles.datePickerContainer} onPress={() => setShowDatePicker(true)}>
               <Icon name="event" size={20} color={theme.textSecondary} style={styles.inputIcon} />
               <Text style={styles.datePickerText}>{formatDate(dateOfBirth)}</Text>
@@ -639,6 +797,8 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 maximumDate={new Date()}
               />
             )}
+
+            {/* Gender */}
             <Text style={styles.genderLabel}>Gender</Text>
             <View style={styles.genderContainer}>
               {['male', 'female', 'other'].map((option) => (
@@ -653,6 +813,8 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </TouchableOpacity>
               ))}
             </View>
+
+            {/* Submit Button */}
             <TouchableOpacity
               style={[styles.button, styles.registerButton, loading && styles.disabledButton]}
               onPress={handleSubmit}
@@ -667,12 +829,15 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </>
               )}
             </TouchableOpacity>
+            
+            {/* Login Link */}
             <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()} disabled={loading}>
               <Text style={styles.cancelButtonText}>Already have an account? Sign In</Text>
             </TouchableOpacity>
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
+
       {/* Phone OTP Modal */}
       <Modal
         visible={showPhoneOTPModal}
@@ -699,11 +864,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   maxLength={1}
                   autoFocus={index === 0}
                   textAlign="center"
-                  autoCorrect={false}
-                  spellCheck={false}
-                  autoComplete="off"
-                  importantForAutofill="no"
-                  textContentType="none"
                 />
               ))}
             </View>
@@ -729,6 +889,7 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
       {/* Email OTP Modal */}
       <Modal
         visible={showEmailOTPModal}
@@ -755,11 +916,6 @@ const RegisterScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   maxLength={1}
                   autoFocus={index === 0}
                   textAlign="center"
-                  autoCorrect={false}
-                  spellCheck={false}
-                  autoComplete="off"
-                  importantForAutofill="no"
-                  textContentType="none"
                 />
               ))}
             </View>
@@ -969,6 +1125,73 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
+  // User ID Styles
+  userIdContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userIdInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+    paddingVertical: 8,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  unverifiedInput: {
+    borderRightWidth: 2,
+    borderRightColor: theme.warning,
+  },
+  userIdControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  userIdModeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  activeUserIdMode: {
+    backgroundColor: theme.primary,
+  },
+  userIdModeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  verifyUserIdButton: {
+    width: 70,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 5,
+  },
+  verifyUserIdText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  errorText: {
+    color: theme.error,
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 10,
+  },
+  helperText: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 10,
+  },
+  // Verification Button Styles
   verifyButton: {
     width: 70,
     height: 30,
@@ -1160,50 +1383,7 @@ const styles = StyleSheet.create({
   },
 });
 
-// Memoize to optimize for live real-time app
 export default React.memo(RegisterScreen);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1280,6 +1460,15 @@ export default React.memo(RegisterScreen);
 //   const [emailOTPGenerated, setEmailOTPGenerated] = useState('');
 //   const [sendingOTP, setSendingOTP] = useState({ phone: false, email: false });
   
+
+
+//   const [userId, setUserId] = useState('');
+// const [userIdMode, setUserIdMode] = useState<'auto' | 'custom'>('auto');
+// const [userIdVerified, setUserIdVerified] = useState(false);
+// const [checkingUserId, setCheckingUserId] = useState(false);
+// const [userIdError, setUserIdError] = useState('');
+
+
 //   // Alert state
 //   const [alertVisible, setAlertVisible] = useState(false);
 //   const [alertMessage, setAlertMessage] = useState('');
@@ -1314,6 +1503,87 @@ export default React.memo(RegisterScreen);
 //       AsyncStorage.removeItem('isRegistering');
 //     };
 //   }, []);
+
+
+
+
+//   const handleGenerateUserId = async () => {
+//   try {
+//     setCheckingUserId(true);
+//     const response = await fetch(`${API_URL}/api/auth/generate-user-id`, {
+//       method: 'GET',
+//       headers: {
+//         'Content-Type': 'application/json',
+//       },
+//     });
+    
+//     const data = await response.json();
+//     if (response.ok && data.success) {
+//       setUserId(data.userId);
+//       setUserIdVerified(true);
+//       setUserIdError('');
+//     } else {
+//       throw new Error(data.message || 'Failed to generate User ID');
+//     }
+//   } catch (error: any) {
+//     console.error('Generate user ID error:', error);
+//     showQuickAlert('Failed to generate User ID. Please try again.', 'error');
+//   } finally {
+//     setCheckingUserId(false);
+//   }
+// };
+
+// // Add this function to verify custom user ID
+// const handleVerifyUserId = async () => {
+//   if (!userId) {
+//     setUserIdError('Please enter a User ID');
+//     return;
+//   }
+  
+//   try {
+//     setCheckingUserId(true);
+//     const response = await fetch(`${API_URL}/api/auth/check-user-id`, {
+//       method: 'POST',
+//       headers: {
+//         'Content-Type': 'application/json',
+//       },
+//       body: JSON.stringify({ userId }),
+//     });
+    
+//     const data = await response.json();
+//     if (response.ok && data.success) {
+//       setUserIdVerified(true);
+//       setUserIdError('');
+//       showQuickAlert('User ID is available!', 'success');
+//     } else {
+//       setUserIdVerified(false);
+//       setUserIdError(data.message || 'User ID verification failed');
+//       showQuickAlert(data.message || 'User ID verification failed', 'error');
+//     }
+//   } catch (error: any) {
+//     console.error('Verify user ID error:', error);
+//     setUserIdVerified(false);
+//     setUserIdError('Failed to verify User ID');
+//     showQuickAlert('Failed to verify User ID. Please try again.', 'error');
+//   } finally {
+//     setCheckingUserId(false);
+//   }
+// };
+
+// // Add this function to handle user ID mode change
+// const handleUserIdModeChange = (mode: 'auto' | 'custom') => {
+//   setUserIdMode(mode);
+//   setUserIdVerified(false);
+//   setUserIdError('');
+  
+//   if (mode === 'auto') {
+//     handleGenerateUserId();
+//   } else {
+//     setUserId('');
+//   }
+// };
+
+
 
 //   // Toast alert animation (slide from top)
 //   const showQuickAlert = (message: string, type: string = 'error') => {
@@ -1575,7 +1845,23 @@ export default React.memo(RegisterScreen);
 //     }
 //   };
 
+
+
+//   useEffect(() => {
+//   if (userIdMode === 'auto') {
+//     handleGenerateUserId();
+//   }
+// }, [userIdMode]);
+
+
+
 //   const handleSubmit = async () => {
+//       if (!userId || !userIdVerified) {
+//     showQuickAlert('Please set up your User ID', 'error');
+//     return;
+//   }
+
+
 //     if (!name || !phone || !email || !password || !confirmPassword) {
 //       showQuickAlert('Please fill all fields', 'error');
 //       return;
@@ -1606,28 +1892,32 @@ export default React.memo(RegisterScreen);
 //     setLoading(true);
 //     try {
 //       const formattedDateOfBirth = dateOfBirth.toISOString().split('T')[0];
-//       const response = await fetch(`${API_URL}/api/auth/register`, {
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify({
-//           name,
-//           phone,
-//           email,
-//           password,
-//           dateOfBirth: formattedDateOfBirth,
-//           gender,
-//           isPhoneVerified: phoneVerified,
-//           isEmailVerified: emailVerified,
-//         }),
-//       });
+//   const response = await fetch(`${API_URL}/api/auth/register`, {
+//     method: 'POST',
+//     headers: {
+//       'Content-Type': 'application/json',
+//     },
+//     body: JSON.stringify({
+//       name,
+//       phone,
+//       email,
+//       password,
+//       userId, // Add userId
+//       dateOfBirth: formattedDateOfBirth,
+//       gender,
+//       isPhoneVerified: phoneVerified,
+//       isEmailVerified: emailVerified,
+//     }),
+//   });
 //       const data = await response.json();
 //       if (response.ok) {
-//         // Clear registration flag and navigate to home
+//         // Clear registration flag and navigate to Main
 //         await AsyncStorage.removeItem('isRegistering');
 //         showQuickAlert('Registration successful!', 'success');
-//         navigation.navigate('Login');
+//         navigation.reset({
+//           index: 0,
+//           routes: [{ name: 'Main' }],
+//         });
 //       } else {
 //         showQuickAlert(data.message || 'Registration failed', 'error');
 //       }
@@ -1799,6 +2089,84 @@ export default React.memo(RegisterScreen);
 //                 </TouchableOpacity>
 //               </Animated.View>
 //             </View>
+
+
+
+
+         
+
+// {/* User ID Field */}
+// <View style={styles.inputContainer}>
+//   <Icon name="badge" size={20} color={theme.textSecondary} style={styles.inputIcon} />
+//   <View style={styles.userIdContainer}>
+//     <TextInput
+//       style={[styles.userIdInput, !userIdVerified && userIdMode === 'custom' && styles.unverifiedInput]}
+//       placeholder="User ID"
+//       placeholderTextColor={theme.textSecondary}
+//       value={userId}
+//       onChangeText={(text) => {
+//         setUserId(text);
+//         if (userIdMode === 'custom') {
+//           setUserIdVerified(false);
+//         }
+//         setUserIdError('');
+//       }}
+//       editable={userIdMode === 'custom'}
+//       autoCapitalize="characters"
+//       autoCorrect={false}
+//       spellCheck={false}
+//       autoComplete="off"
+//       importantForAutofill="no"
+//       textContentType="none"
+//     />
+//     <View style={styles.userIdControls}>
+//       <TouchableOpacity
+//         style={[styles.userIdModeButton, userIdMode === 'auto' && styles.activeUserIdMode]}
+//         onPress={() => handleUserIdModeChange('auto')}
+//       >
+//         <Text style={styles.userIdModeText}>A</Text>
+//       </TouchableOpacity>
+//       <TouchableOpacity
+//         style={[styles.userIdModeButton, userIdMode === 'custom' && styles.activeUserIdMode]}
+//         onPress={() => handleUserIdModeChange('custom')}
+//       >
+//         <Text style={styles.userIdModeText}>C</Text>
+//       </TouchableOpacity>
+//       {userIdMode === 'custom' && (
+//         <TouchableOpacity
+//           style={[
+//             styles.verifyUserIdButton,
+//             userIdVerified ? styles.verifiedButton : styles.unverifiedButton,
+//             (checkingUserId || loading) && styles.disabledButton,
+//           ]}
+//           onPress={handleVerifyUserId}
+//           disabled={checkingUserId || loading || !userId}
+//         >
+//           {checkingUserId ? (
+//             <ActivityIndicator size="small" color="#FFF" />
+//           ) : userIdVerified ? (
+//             <Icon name="check-circle" size={16} color="#FFF" />
+//           ) : (
+//             <Text style={styles.verifyUserIdText}>Verify</Text>
+//           )}
+//         </TouchableOpacity>
+//       )}
+//     </View>
+//   </View>
+// </View>
+// {userIdError ? (
+//   <Text style={styles.errorText}>{userIdError}</Text>
+// ) : (
+//   <Text style={styles.helperText}>
+//     {userIdMode === 'auto' 
+//       ? 'Auto-generated User ID' 
+//       : 'Must be 6+ characters, include a number, no special characters'
+//     }
+//   </Text>
+// )}
+
+
+
 //             <View style={styles.inputContainer}>
 //               <Icon name="lock" size={20} color={theme.textSecondary} style={styles.inputIcon} />
 //               <TextInput
@@ -1997,6 +2365,74 @@ export default React.memo(RegisterScreen);
 // };
 
 // const styles = StyleSheet.create({
+
+//   userIdContainer: {
+//   flex: 1,
+//   flexDirection: 'row',
+//   alignItems: 'center',
+// },
+// userIdInput: {
+//   flex: 1,
+//   color: '#FFFFFF',
+//   fontSize: 16,
+//   fontWeight: '500',
+//   paddingVertical: 8,
+//   includeFontPadding: false,
+//   textAlignVertical: 'center',
+// },
+// unverifiedInput: {
+//   borderRightWidth: 2,
+//   borderRightColor: theme.warning,
+// },
+// userIdControls: {
+//   flexDirection: 'row',
+//   alignItems: 'center',
+//   marginLeft: 10,
+// },
+// userIdModeButton: {
+//   width: 30,
+//   height: 30,
+//   borderRadius: 15,
+//   backgroundColor: 'rgba(255, 255, 255, 0.1)',
+//   justifyContent: 'center',
+//   alignItems: 'center',
+//   marginHorizontal: 2,
+// },
+// activeUserIdMode: {
+//   backgroundColor: theme.primary,
+// },
+// userIdModeText: {
+//   color: 'white',
+//   fontSize: 12,
+//   fontWeight: '600',
+// },
+// verifyUserIdButton: {
+//   width: 70,
+//   height: 30,
+//   borderRadius: 15,
+//   justifyContent: 'center',
+//   alignItems: 'center',
+//   marginLeft: 5,
+// },
+// verifyUserIdText: {
+//   color: 'white',
+//   fontSize: 12,
+//   fontWeight: '600',
+// },
+// errorText: {
+//   color: theme.error,
+//   fontSize: 12,
+//   marginTop: 4,
+//   marginLeft: 10,
+// },
+// helperText: {
+//   color: theme.textSecondary,
+//   fontSize: 12,
+//   marginTop: 4,
+//   marginLeft: 10,
+// },
+
+
 //   container: {
 //     flex: 1,
 //     backgroundColor: theme.background,
@@ -2369,5 +2805,47 @@ export default React.memo(RegisterScreen);
 
 // // Memoize to optimize for live real-time app
 // export default React.memo(RegisterScreen);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

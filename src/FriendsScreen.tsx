@@ -1,9 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet, StatusBar, Image, TouchableOpacity, FlatList } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  StatusBar, 
+  Image, 
+  TouchableOpacity, 
+  FlatList,
+  ScrollView 
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import Icon from 'react-native-vector-icons/MaterialIcons'; // 统一使用MaterialIcons
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../styles/theme';
+import { useNavigation } from '@react-navigation/native';
 
 const friends = [
   { id: '1', name: 'Sarah Miller', status: 'Active now', avatar: 'https://randomuser.me/api/portraits/women/33.jpg' },
@@ -16,9 +26,18 @@ const friends = [
 const addFriends = [
   { id: '6', name: 'Sophia Garcia', status: '15 mutual friends', avatar: 'https://randomuser.me/api/portraits/women/67.jpg' },
   { id: '7', name: 'William Taylor', status: '8 mutual friends', avatar: 'https://randomuser.me/api/portraits/men/55.jpg' },
+  { id: '8', name: 'Emma Wilson', status: '12 mutual friends', avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
+  { id: '9', name: 'Daniel Lee', status: '6 mutual friends', avatar: 'https://randomuser.me/api/portraits/men/68.jpg' },
+  { id: '10', name: 'Sophie Martin', status: '9 mutual friends', avatar: 'https://randomuser.me/api/portraits/women/55.jpg' },
 ];
 
 const FriendsScreen = () => {
+  const navigation = useNavigation();
+
+  const handleNearbyFriendsPress = () => {
+    navigation.navigate('NearbyFriends' as never);
+  };
+
   const renderFriend = ({ item }) => (
     <View style={styles.friendItem}>
       <Image source={{ uri: item.avatar }} style={styles.friendAvatar} />
@@ -53,41 +72,71 @@ const FriendsScreen = () => {
           </View>
 
           <View style={styles.content}>
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitle}>
-                  <Icon name="people" size={16} color={theme.accentColor} style={styles.sectionTitleIcon} />
-                  <Text style={styles.sectionTitleText}>Friends</Text>
+            <ScrollView 
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollViewContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitle}>
+                    <Icon name="people" size={16} color={theme.accentColor} style={styles.sectionTitleIcon} />
+                    <Text style={styles.sectionTitleText}>Friends</Text>
+                  </View>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>See All</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity>
-                  <Text style={styles.seeAllText}>See All</Text>
-                </TouchableOpacity>
+                <FlatList
+                  data={friends}
+                  renderItem={renderFriend}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  style={styles.friendsList}
+                />
               </View>
-              <FlatList
-                data={friends}
-                renderItem={renderFriend}
-                keyExtractor={(item) => item.id}
-                style={styles.friendsList}
-              />
-            </View>
 
-            <View style={styles.sectionContainer}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitle}>
-                  <Icon name="person-add" size={16} color={theme.accentColor} style={styles.sectionTitleIcon} />
-                  <Text style={styles.sectionTitleText}>Add Friend</Text>
+              <View style={styles.sectionContainer}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionTitle}>
+                    <Icon name="person-add" size={16} color={theme.accentColor} style={styles.sectionTitleIcon} />
+                    <Text style={styles.sectionTitleText}>Add Friend</Text>
+                  </View>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>See All</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity>
-                  <Text style={styles.seeAllText}>See All</Text>
-                </TouchableOpacity>
+                <FlatList
+                  data={addFriends}
+                  renderItem={renderFriend}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  style={styles.friendsList}
+                />
               </View>
-              <FlatList
-                data={addFriends}
-                renderItem={renderFriend}
-                keyExtractor={(item) => item.id}
-                style={styles.friendsList}
-              />
-            </View>
+
+              {/* Nearby Friends Button - Inside ScrollView at the bottom */}
+              <View style={styles.nearbyButtonContainer}>
+                <TouchableOpacity 
+                  style={styles.nearbyButton}
+                  onPress={handleNearbyFriendsPress}
+                >
+                  <LinearGradient
+                    colors={['#667eea', '#764ba2']}
+                    style={styles.nearbyButtonGradient}
+                  >
+                    <Icon name="location-on" size={20} color="#fff" style={styles.nearbyButtonIcon} />
+                    <Text style={styles.nearbyButtonText}>NEARBY FRIENDS</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+                
+                {/* VIP Feature Description */}
+                <View style={styles.vipDescription}>
+                  <Icon name="star" size={16} color="#FFD700" style={styles.vipIcon} />
+                  <Text style={styles.vipText}>VIP Exclusive Feature - Unlock nearby connections</Text>
+                </View>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </LinearGradient>
@@ -121,7 +170,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -146,8 +194,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   content: {
-    padding: 16,
     flex: 1,
+    padding: 16,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollViewContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   sectionContainer: {
     backgroundColor: 'rgba(30, 40, 50, 0.7)',
@@ -228,6 +283,59 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
     fontFamily: 'Poppins',
+  },
+  nearbyButtonContainer: {
+    marginTop: 10,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  nearbyButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    width: '100%',
+  },
+  nearbyButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  nearbyButtonIcon: {
+    marginRight: 10,
+  },
+  nearbyButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: 'Poppins',
+    letterSpacing: 0.5,
+  },
+  vipDescription: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+  },
+  vipIcon: {
+    marginRight: 8,
+  },
+  vipText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: 'Poppins',
+    textAlign: 'center',
   },
 });
 
